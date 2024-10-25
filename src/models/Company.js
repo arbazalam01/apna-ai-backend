@@ -14,10 +14,8 @@ const AboutSchema = new mongoose.Schema({
   description: String,
   mission: String,
 });
-const LeadershipSchema = new mongoose.Schema({
-  name: String,
-  designation: String,
-});
+
+
 
 const SwotanalysisSchema = new mongoose.Schema({
   strengths: [ItemSchema],
@@ -47,8 +45,6 @@ const CompanySchema = new mongoose.Schema(
     products: [ProductandServiceSchema],
     services: [ProductandServiceSchema],
     industries: [String],
-    leadership: [LeadershipSchema],
-    topclients: [String],
     marketposition: MarketpositionSchema,
     swotanalysis: SwotanalysisSchema,
     topseos: [String],
