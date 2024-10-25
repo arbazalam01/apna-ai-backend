@@ -1,0 +1,25 @@
+# Dependency directories
+node_modules/
+
+# Optional npm cache directory
+.npm
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Optional REPL history
+.node_repl_history
+
+
+.env
+
+# src/config/firebaseAdminServiceKey.json
+
+dist
+
+archived/
+
+
+tmp
