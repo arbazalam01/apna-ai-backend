@@ -115,7 +115,7 @@ const getProspectEmail = async (req, res) => {
 const createEmails = async (req, res) => {
   const { prospectIds, companyId, campaignGuidlines } = req.body;
 
-  const prospects = await Prospect.find({ _id: { $in: prospectIds } });
+  const prospects = await Prospect.find({ id: { $in: prospectIds } });
   const campaign = await createCampaign(companyId);
   const campaignId = campaign._id;
   const userEmail = req.cookies.email;
