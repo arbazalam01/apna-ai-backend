@@ -18,23 +18,69 @@ const getUserSegments = async (req, res) => {
   }
 };
 
-// POST a new segment
+
 const createUserSegment = async (req, res) => {
   try {
-    const { companyId, name, description } = req.body;
-
-    if (!companyId || !name) {
-      return res.status(400).json({ message: "companyId and name are required." });
+    if (!req.file) {
+      return res.status(400).json({ message: "CSV file is required." });
     }
 
-    const newSegment = new UserSegment({ companyId, name, description });
-    const savedSegment = await newSegment.save();
+    const segments = [];
 
-    res.status(201).json(savedSegment);
+    // Parse the uploaded CSV file
+    fs.createReadStream(path.join(__dirname, "../", req.file.path))
+      .pipe(csv())
+      .on("data", (row) => {
+        const { companyId, name, description } = row;
+
+        if (!companyId || !name) {
+          throw new Error("Each row must contain companyId and name.");
+        }
+
+        segments.push({ companyId, name, description });
+      })
+      .on("end", async () => {
+        try {
+          const savedSegments = [];
+
+          // Process each segment using `createThreadAndRunonKnowledgeBase`
+          for (const segment of segments) {
+            const finalPrompt = `Create segment for: ${segment.name}`;
+            const jsonData = await createThreadAndRunonKnowledgeBase(
+              req.body.companyId,
+              finalPrompt
+            );
+
+            // Save the result to the database
+            const newSegment = new UserSegment({
+              companyId: jsonData.companyId,
+              name: segment.name,
+              description: segment.description || jsonData.segmentData,
+            });
+
+            const savedSegment = await newSegment.save();
+            savedSegments.push(savedSegment);
+          }
+
+          res.status(201).json(savedSegments);
+        } catch (error) {
+          res.status(500).json({ error: error.message });
+        } finally {
+          // Clean up the uploaded file
+          fs.unlink(req.file.path, (err) => {
+            if (err) console.error("Failed to delete file:", err);
+          });
+        }
+      })
+      .on("error", (error) => {
+        res.status(500).json({ error: error.message });
+      });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+
+// POST a new segment
 
 module.exports = {
  getUserSegments,
