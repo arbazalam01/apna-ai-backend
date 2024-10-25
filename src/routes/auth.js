@@ -1,61 +1,63 @@
-import User from "../models/User";
-import { generateToken } from "../utils/jwt";
+const { Router } = require("express");
+const {
+  signout,
+  signup,
+  signin,
+  sendResetPassword,
+  confirmResetPassword,
+  googleSignin,
+  getUserdata,
+  isSignedIn,
+  sendotp,
+  isAuthenticated
+} = require("../controllers/auth.js");
+const { check } = require("express-validator");
 
-export const signup = async (req, res) => {
-  const { name, email, password } = req.body;
 
-  // Basic checks
-  if (!name || !email || !password) {
-    return res
-      .status(400)
-      .json({ message: "Name, email, and password are required" });
-  }
+const router = Router();
 
-  try {
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
-    }
+router.post(
+  "/signup",
+  check("name").isLength({ min: 3 }).withMessage("Name must be atleast 3 chars"),
+  check("lastname").isLength({ min: 3 }).withMessage("Lastname must be atleast 3 chars"),
+  check("email").isEmail().withMessage("Email must be atleast 3 chars"),
+  signup
+);
 
-    const user = new User({ name, email, password });
-    await user.save();
+router.post(
+  "/googleSignin",
+  googleSignin
+);
 
-    const token = generateToken({ id: user._id });
+router.post(
+  "/signin",
+  check("email").isEmail().withMessage("Must be Email"),
+  signin
+);
 
-    // Exclude password from the user object
-    const userResponse = user.toObject();
-    delete userResponse.password;
+router.post(
+  "/sendotp",
+  check("email").isEmail().withMessage("Must be Email"),
+  sendotp
+);
 
-    res.status(201).json({ token, user: userResponse });
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-};
+router.post("/reset-password/request",
+check("email").isEmail().withMessage("Must be Email"),
+sendResetPassword 
+);
 
-export const login = async (req, res) => {
-  const { email, password } = req.body;
+router.post("/reset-password/confirm",
+confirmResetPassword 
+);
 
-  // Basic checks
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required" });
-  }
+router.get("/signout", signout);
 
-  try {
-    const user = await User.findOne({ email });
+router.post("/getuserdata", getUserdata);
 
-    if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
+router.get("/test", isSignedIn, (req, res) => {
+  res.send("Protected Route");
+});
 
-    const token = generateToken({ id: user._id });
 
-    // Exclude password from the user object
-    const userResponse = user.toObject();
-    delete userResponse.password;
 
-    res.status(200).json({ token, user: userResponse });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+module.exports = router;

@@ -1,14 +1,10 @@
 const Company = require("../models/Company");
 const Relation = require("../models/Relation");
 const User = require("../models/User");
-const Prompt = require("../models/Prompt");
 const { OpenAI, Configuration } = require("openai");
 const AWS = require("aws-sdk");
 const fs = require("fs");
-const Sections = require("../utils/prompt");
-const SectionsWithoutAssistance = require("../utils/promptwithoutassist");
 const checkConfig = require("../utils/config");
-const Function_Info = require("../utils/functions_info");
 const axios = require("axios");
 const FormData = require("form-data");
 const { parseCSV, parseExcel } = require("../utils/csv_parser");
@@ -64,22 +60,6 @@ const deleteAssistant = async (assistantId) => {
   }
 };
 
-const deleteFile = async (fileId) => {
-  const response = await fetch(`https://api.openai.com/v1/files/${fileId}`, {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${openaiapi}`,
-      "Content-Type": "application/json",
-      "OpenAI-Beta": "assistants=v1", // Additional header for the beta feature
-    },
-  });
-
-  if (response.ok) {
-    console.log("File deleted successfully");
-  } else {
-    console.error("Error deleting file:", await response.text());
-  }
-};
 
 const addCustomer = async (req, res) => {
   try {
@@ -269,57 +249,7 @@ const updateCompetitors = async (req, res) => {
       }
     });
 
-    const sectionInfo = SectionsWithoutAssistance.find(
-      (info) => info.section === "userpersona"
-    );
-    const formatInfo = Function_Info.find(
-      (info) => info.section === "userpersona"
-    );
-    const openai = new OpenAI({
-      apiKey: openaiapi,
-    });
 
-    const updatePromises = userpersona.map(async (item) => {
-      let prompt = sectionInfo.Prompt.replace("$name", item.userinfo.name)
-        .replace("$age", item.userinfo.age)
-        .replace("$jobdescription", item.userinfo.jobdescription)
-        .replace("$industry", item.userinfo.industry)
-        .replace("$yearofexperience", item.userinfo.yearofexperience)
-        .replace("$location", item.userinfo.location);
-
-      try {
-        const response = await openai.chat.completions.create({
-          model: GPT_MODEL,
-          messages: [{ role: "user", content: prompt }],
-          functions: [
-            {
-              name: "format_json",
-              description: "Convert text into json",
-              parameters: formatInfo.parameters,
-            },
-          ],
-          function_call: "auto",
-        });
-
-        let val = JSON.parse(
-          response.choices[0].message.function_call.arguments
-        );
-
-        item.gptoutput = val;
-      } catch (error) {
-        console.error("Error:", error);
-        res.status(500).json({ error: "Failed to process the request." });
-      }
-    });
-
-    // Wait for all promises to resolve
-    await Promise.all(updatePromises);
-    let id = allCompanies[0].companyId._id;
-
-    const updateddata = await Relation.findOneAndUpdate(
-      { companyId: id },
-      { $set: { userpersona: userpersona } }
-    );
 
     res.json({ data: "Companies updated" });
   } catch (err) {
@@ -395,59 +325,8 @@ const addCompanyData = async (req, res) => {
     const { companyId } = req.params;
     const { type, data } = req.body;
 
-    if (type == "userpersona") {
-      const sectionInfo = SectionsWithoutAssistance.find(
-        (info) => info.section === type
-      );
-      const formatInfo = Function_Info.find((info) => info.section === type);
-      const openai = new OpenAI({
-        apiKey: openaiapi,
-      });
-
-      const updatePromises = data.map(async (item) => {
-        let prompt = sectionInfo.Prompt.replace("$name", item.userinfo.name)
-          .replace("$age", item.userinfo.age)
-          .replace("$jobdescription", item.userinfo.jobdescription)
-          .replace("$industry", item.userinfo.industry)
-          .replace("$yearofexperience", item.userinfo.yearofexperience)
-          .replace("$location", item.userinfo.location);
-
-        try {
-          const response = await openai.chat.completions.create({
-            model: GPT_MODEL,
-            messages: [{ role: "user", content: prompt }],
-            functions: [
-              {
-                name: "format_json",
-                description: "Convert text into json",
-                parameters: formatInfo.parameters,
-              },
-            ],
-            function_call: "auto",
-          });
-
-          let val = JSON.parse(
-            response.choices[0].message.function_call.arguments
-          );
-
-          item.gptoutput = val;
-        } catch (error) {
-          console.error("Error:", error);
-          res.status(500).json({ error: "Failed to process the request." });
-        }
-      });
-
-      // Wait for all promises to resolve
-      await Promise.all(updatePromises);
-
-      //Update the document after the loop is completed
-      await Relation.findOneAndUpdate(
-        { companyId: companyId },
-        { $set: { userpersona: data } }
-      );
-    } else {
       await Company.findByIdAndUpdate(companyId, { [type]: data });
-    }
+
 
     res.json({ message: "Successfully added company data" });
   } catch (err) {
@@ -466,58 +345,6 @@ const scrapCompanyData = async (req, res) => {
   }
 };
 
-async function generateJSONFromtext(prompt, type, companyId) {
-  const openai = new OpenAI({
-    apiKey: openaiapi,
-  });
-
-  const sectionInfo = Function_Info.find((info) => info.section === type);
-
-  const chatCompletion = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo-1106",
-    messages: [{ role: "user", content: prompt }],
-    functions: [
-      {
-        name: "format_json",
-        description: "Convert text into json",
-        parameters: sectionInfo.parameters,
-      },
-    ],
-    function_call: "auto",
-  });
-
-  try {
-    if (chatCompletion.choices[0].message?.function_call?.arguments) {
-      if (type == "toptrends") {
-        if (
-          JSON.parse(
-            chatCompletion.choices[0].message?.function_call?.arguments
-          ).type?.length != 0
-        ) {
-          let val = JSON.parse(
-            chatCompletion.choices[0].message.function_call.arguments
-          );
-          let id = companyId.toString();
-          console.log("data", val);
-          console.log("id", id);
-          await Relation.findOneAndUpdate(
-            { companyId: id },
-            { $set: { [type]: val.toptrends } }
-          );
-        }
-      } else {
-        await Company.findByIdAndUpdate(companyId, {
-          [type]: JSON.parse(
-            chatCompletion.choices[0].message.function_call.arguments
-          ),
-        });
-      }
-    }
-  } catch (err) {
-    console.log("error", err);
-    return;
-  }
-}
 
 const runAllPrompt = async (req, res) => {
   try {
@@ -630,25 +457,6 @@ const getAlldata = async (req, res) => {
   }
 };
 
-const getPrompt = async (req, res) => {
-  try {
-    const { tabType } = req.params;
-
-    const prompt = await Prompt.find();
-    const data = prompt[0][tabType];
-
-    if (!data)
-      return res.json({
-        status: "error",
-        message: "No data found",
-        data: null,
-      });
-
-    res.json({ status: "success", message: "Successfully fetched data", data });
-  } catch (err) {
-    res.json({ status: "error", message: err.message, data: [] });
-  }
-};
 
 async function processCompanyIds(CompanyIds) {
   for (const company of CompanyIds) {
@@ -1237,7 +1045,6 @@ module.exports = {
   getCompanyData,
   scrapCompanyData,
   runAPrompt,
-  getPrompt,
   getNotificationData,
   getScrapeDate,
   uploadProspect,

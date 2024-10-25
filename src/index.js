@@ -1,11 +1,18 @@
 // src/index.js
+dotenv.config();
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import bodyParser from "body-parser";
 import connectDB from "./config/db";
 
-dotenv.config();
+const pdfRouter = require("./routes/pdf.js");
+const customerRouter = require("./routes/customer.js");
+const calendarRouter = require("./routes/calendar.js");
+const authRoutes = require("./routes/auth.js");
+const campaignRoutes = require("./routes/campaign.js");
+const { isAuthenticated } = require("./controllers/auth.js");
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +36,13 @@ app.use(express.json());
 app.get("/", (req, res) => {
   res.send("Hello, Express with Babel and ES6!");
 });
+
+app.use("/calendar", calendarRouter);
+app.use("/api", authRoutes);
+app.use("/customer", isAuthenticated, customerRouter);
+app.use("/pdf", isAuthenticated, pdfRouter);
+app.use("/campaign", isAuthenticated, campaignRoutes);
+
 
 // Start the server
 app.listen(PORT, () => {

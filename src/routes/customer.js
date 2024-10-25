@@ -8,7 +8,6 @@ const {
   addCompanyData,
   getCompanyData,
   scrapCompanyData,
-  getPrompt,
   getNotificationData,
   getScrapeDate,
   uploadProspect,
@@ -72,7 +71,6 @@ router.post("/:companyId/updatecompetitors", updateCompetitors);
 router.post("/:companyId/adddata", addCompanyData);
 router.get("/:companyId/:tabType/getdata", getCompanyData);
 router.get("/:companyId/getAlldata", getAlldata);
-router.get("/:tabType/getprompt", getPrompt);
 router.post("/scrapdata", scrapCompanyData);
 router.post("/runAllPrompt", runAllPrompt);
 router.post("/run-assistance", runAPrompt);
