@@ -448,7 +448,7 @@ const uploadScrapedData = async (scrapedData, companyId) => {
   formData.append("file", combinedMarkdown.trim(), "combined.md"); // Use Buffer and filename
   formData.append("company_id", companyId.toString());
 
-  await axios.post(`${KNOWLEDGE_BASE_API}/upload`, formData, {
+  await axios.post(`${KNOWLEDGE_BASE_API}/create-embeddings`, formData, {
     headers: formData.getHeaders(), // Pass correct headers for multipart/form-data
   });
 
