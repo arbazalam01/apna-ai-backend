@@ -436,15 +436,16 @@ const createThreadAndRun = async (assistantId, finalPrompt) => {
 };
 
 const createThreadAndRunonKnowledgeBase = async (companyId, finalPrompt) => {
+  console.log("Final Prompt ---- >", finalPrompt);
   const execute = async () => {
     try {
       // await scrapeData(company.weburl, company.id);
-      const apiRes = await axios.post(`${KNOWLEDGE_BASE_API}/search`, {
-        query: finalPrompt,
+      const apiRes = await axios.post(`${KNOWLEDGE_BASE_API}/run-prompt`, {
+        userPrompt: finalPrompt,
         company_id: companyId,
       });
 
-      const data = apiRes.data.result;
+      const data = apiRes.data.response;
       console.log("data-->", data);
       const jsonOutput = naiveJSONFromText(data);
       console.log("jsonOutput-->", jsonOutput);

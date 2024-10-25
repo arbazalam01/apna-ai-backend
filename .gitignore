@@ -1,6 +1,8 @@
 /node_modules
 keys.json
 .env
-/tmp
+tmp
 LinkedInCompanyData.json
+uploads
+
 
