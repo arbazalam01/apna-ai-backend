@@ -8,7 +8,7 @@ const ItemSchema = new mongoose.Schema({
     Theme: String,
     Topic: String,
     ContentDetail: String,
-    Industry:String
+    Segment: String
   });
 
 const CalendarSchema = new mongoose.Schema({

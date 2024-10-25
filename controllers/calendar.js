@@ -966,18 +966,15 @@ const getSummaryData = async (req, res) => {
 };
 
 const getThemes = async (req, res) => {
-  const { industries, companyId } = req.body;
+  const { segment, companyId } = req.body;
   try {
     const company = await Company.findById(companyId);
-    let Industry = "";
+    
 
-    industries.forEach((industry) => {
-      Industry += industry + ",";
-    });
-
+    
     let prompt = Themes.prompt.replaceAll("$company_name", company.name);
 
-    prompt = prompt.replaceAll("$industries", Industry);
+    prompt = prompt.replaceAll("$segment", segment);
 
     const finalPrompt = `${prompt}\n Do not include any explanations, only provide JSON response following this format without deviation.:\n ${Themes.json_format}\n The JSON response:`;
 
