@@ -1,25 +1,6 @@
-# Dependency directories
-node_modules/
-
-# Optional npm cache directory
-.npm
-
-# Logs
-logs
-*.log
-npm-debug.log*
-
-# Optional REPL history
-.node_repl_history
-
-
+/node_modules
+keys.json
 .env
+/tmp
+LinkedInCompanyData.json
 
-# src/config/firebaseAdminServiceKey.json
-
-dist
-
-archived/
-
-
-tmp
