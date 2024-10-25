@@ -16,6 +16,7 @@ const personasRouter = require("./routes/persona.js");
 const calendarRouter = require("./routes/calendar.js");
 const personaInputRouter = require("./routes/personaInput.js");
 const datainsight = require("./routes/datainsight.js");
+const userSegments = require("./routes/customer_segmentation.js");
 const cookieParser = require("cookie-parser");
 const { startCronJob } = require("./cron-jobs/companyUpdate.js");
 const { isAuthenticated } = require("./controllers/auth.js");
@@ -70,6 +71,7 @@ app.use("/calendar", calendarRouter);
 app.use("/scrape", isAuthenticated, require("./routes/scraper.js"));
 app.use("/datainsight", datainsight);
 app.use("/personaInput", isAuthenticated, personaInputRouter);
+app.use("/usersegments",userSegments)
 
 startCronJob(); // Starting the cron job
 
