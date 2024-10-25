@@ -10,7 +10,7 @@ const UserSegmentsSchema = new mongoose.Schema(
       type: String,
       required: true, // Optional: Add validation if needed
     },
-    Segments: [
+    segments: [
       { Title:String,
         Demographics: String,
         Product_Preferences: String,

@@ -15,10 +15,6 @@ const {
   createThreadAndRunonKnowledgeBase,
   threadAndRunV2,
 } = require("./openai_helper");
-const {
-  scrapeLinkedinCompanyProxyCurl,
-  fetchCompanyLogoProxyCurl,
-} = require("./scraper_helper");
 const Function_Info = require("./functions_info");
 const { default: axios } = require("axios");
 const AWS = require("aws-sdk");
@@ -250,40 +246,6 @@ const dateFormatter = (date) => {
   return dateObject;
 };
 
-const companyLinkedInInfo = async (companyId, prevAboutData) => {
-  try {
-    const companyData = await fetchCompanyData(companyId);
-    // check if linkedinUrl is present in companyData
-    const linkedinUrl = prevAboutData.linkedin?.handle || null;
-    if (linkedinUrl) {
-      // fetch linkedindata from proxy curl
-      // let linkedinData = companyData?.proxycurl || null;
-      // if (!linkedinData) {
-      let linkedinData = await scrapeLinkedinCompanyProxyCurl(linkedinUrl);
-      await updateCompanyData(companyId, { proxycurl: linkedinData });
-      // }
-
-      const profile_img_url = await fetchCompanyLogoProxyCurl(linkedinUrl);
-      const aws_profile_img = await downloadCompanyLogo(
-        companyId,
-        profile_img_url,
-        "companyLogo"
-      );
-      const linkedin_followers = linkedinData?.follower_count || null;
-
-      await Company.findByIdAndUpdate(companyId, {
-        $set: {
-          "about.linkedin.followers": linkedin_followers,
-          "about.companyLogo": aws_profile_img,
-          "about.linkedin.handle": linkedinUrl,
-        },
-      });
-    }
-  } catch (err) {
-    console.log("Error-->", err);
-  }
-};
-
 const runAllPromptHelper = async (companyId) => {
   const allPrompts = getAllPrompts();
   const companyData = await fetchCompanyData(companyId);
@@ -291,7 +253,7 @@ const runAllPromptHelper = async (companyId) => {
   console.log("inside");
 
   // Ensure assistant exists before running prompts
-  const { assistantId } = await isAssistantExist(companyId);
+  // const { assistantId } = await isAssistantExist(companyId);
 
   // const allPromptsPromise = allPrompts.map((section) =>
   //   runASinglePrompt(companyId, section.dbKey, assistantId)
@@ -519,7 +481,6 @@ module.exports = {
   fetchTopTrends,
   dateFormatter,
   isAssistantV2Exist,
-  companyLinkedInInfo,
   runAllPromptHelper,
   isReportDone,
   downloadCompanyLogo,

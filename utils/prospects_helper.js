@@ -48,25 +48,35 @@ const s3 = new AWS.S3();
 const saveProspects = async (prospects, campaigninfo) => {
   let prsopectList = [];
   for (const prospect of prospects) {
-    const prospect_name = prospect["First Name"] + " " + prospect["Last Name"];
-    const prospect_linkedin = prospect["Prospect Linkedin URL"];
-    const company_linkedin = prospect["Company Linkedin URL"];
-    const prospect_title = prospect["Title"];
-    const prospect_email = prospect["Email"];
-    const prospect_industry = prospect["Industry"];
-    const prospect_company = prospect["Company"];
+    const prospect_name = prospect["Customer Name"];
+    // const prospect_linkedin = prospect["Prospect Linkedin URL"];
+    // const company_linkedin = prospect["Company Linkedin URL"];
+    // const prospect_title = prospect["Title"];
+    // const prospect_email = prospect["Email"];
+    // const prospect_industry = prospect["Industry"];
+    // const prospect_company = prospect["Company"];
+    const prospect_age = prospect["Age"];
+    const prospect_gender = prospect["Gender"];
+    const prospect_location = prospect["Location"];
+    const prospect_payment_method = prospect["Payment Method"];
+    const prospect_id = prospect["ID"];
 
     const prospectDetail = {
       name: prospect_name,
-      linkedin: prospect_linkedin,
-      companyLinkedin: company_linkedin,
-      title: prospect_title,
+      age: prospect_age,
+      gender: prospect_gender,
+      location: prospect_location,
+      paymentMethod: prospect_payment_method,
+      // linkedin: prospect_linkedin,
+      // companyLinkedin: company_linkedin,
+      // title: prospect_title,
       email: prospect_email,
-      companyName: prospect["Company Name"],
-      industry: prospect_industry,
-      companyName: prospect_company,
+      // companyName: prospect["Company Name"],
+      // industry: prospect_industry,
+      // companyName: prospect_company,
       objective: campaigninfo.objectives,
       numberOfEmails: campaigninfo.numberOfEmails,
+      id: prospect_id,
     };
 
     // Include the product key if the objective is "Product Engagement"
@@ -75,7 +85,7 @@ const saveProspects = async (prospects, campaigninfo) => {
     }
 
     // check if already exist in db
-    const existingProspect = await Prospect.findOne({ email: prospect_email });
+    const existingProspect = await Prospect.findOne({ id: prospect_id });
     if (existingProspect) {
       // Update the existing prospect's numberOfEmails and objective
       existingProspect.numberOfEmails = campaigninfo.numberOfEmails;
@@ -87,21 +97,26 @@ const saveProspects = async (prospects, campaigninfo) => {
 
       // Save the updated prospect
       await existingProspect.save();
-      prospectDetail._id = existingProspect._id;
+      // prospectDetail._id = existingProspect._id;
       prsopectList.push(prospectDetail);
     } else {
       // await scrapeLinkedinProfile(prospect_linkedin, newProspect._id);
       // await scrapeLinkedinCompany(company_linkedin, newProspect._id);
       const newProspect = new Prospect({
         name: prospect_name,
-        linkedin: prospect_linkedin,
-        companyLinkedin: company_linkedin,
-        title: prospect_title,
-        email: prospect_email,
-        industry: prospect_industry,
-        companyName: prospect_company,
+        age: prospect_age,
+        gender: prospect_gender,
+        location: prospect_location,
+        paymentMethod: prospect_payment_method,
+        // linkedin: prospect_linkedin,
+        // companyLinkedin: company_linkedin,
+        // title: prospect_title,
+        // email: prospect_email,
+        // industry: prospect_industry,
+        // companyName: prospect_company,
         objective: campaigninfo.objectives,
         numberOfEmails: campaigninfo.numberOfEmails,
+        id: prospect_id,
       });
 
       // Include the product key if the objective is "Product Engagement"
@@ -109,20 +124,16 @@ const saveProspects = async (prospects, campaigninfo) => {
         newProspect.product = campaigninfo.product;
       }
 
-      console.log(
-        "Scraping linkedin profile using proxy curl-->",
-        prospect_linkedin
-      );
-      const proxyCurlProfileData = await scrapeLinkedinProfileProxyCurl(
-        prospect_linkedin,
-        newProspect._id
-      );
+      // const proxyCurlProfileData = await scrapeLinkedinProfileProxyCurl(
+      //   prospect_linkedin,
+      //   newProspect._id
+      // );
 
-      newProspect.proxycurl = proxyCurlProfileData;
+      // newProspect.proxycurl = proxyCurlProfileData;
 
       await newProspect.save();
 
-      prospectDetail._id = newProspect._id;
+      // prospectDetail._id = newProspect._id;
       prsopectList.push(prospectDetail);
     }
   }
@@ -137,7 +148,7 @@ const generatePersona = async (userId, companyData) => {
   }
   const user_profile = `Users/${userId}/user_profile.md`;
   // const company_profile = `Users/${userId}/company_profile.json`;
-  const prospectJsonData = await Prospect.findOne({ _id: userId });
+  const prospectJsonData = await Prospect.findOne({ id: userId });
 
   const getObjectParams = {
     Bucket: process.env.BUCKETNAME,
@@ -147,10 +158,14 @@ const generatePersona = async (userId, companyData) => {
 
   const formData = new FormData();
   formData.append("file", data.Body, user_profile); // Use Buffer and filename
-  formData.append("company_id", companyData._id.toString());
+  const uniqueId = `${userId}_${companyData._id}`;
+  formData.append("company_id", uniqueId);
 
   // Upload to the external API
-  await axios.post(`${process.env.KNOWLEDGE_BASE_API}/upload`, formData);
+  await axios.post(
+    `${process.env.KNOWLEDGE_BASE_API}/create-embeddings`,
+    formData
+  );
 
   let prompt;
 
@@ -187,10 +202,8 @@ const generatePersona = async (userId, companyData) => {
   console.log("prompt for persona", prompt);
 
   // const gptRes = await newProspectGenerate(assistantId, threadId, prompt);
-  const gptRes = await createThreadAndRunonKnowledgeBase(
-    companyData._id,
-    prompt
-  );
+
+  const gptRes = await createThreadAndRunonKnowledgeBase(uniqueId, prompt);
 
   console.log("gptRes", gptRes);
 
@@ -226,14 +239,15 @@ const generatePersona = async (userId, companyData) => {
 
 const generateProspectId = async (prospect) => {
   const prospect_name = prospect.name;
-  const prospect_linkedin = prospect.linkedin;
-  const company_linkedin = prospect.companyLinkedin;
-  const prospect_title = prospect.title;
+  // const prospect_linkedin = prospect.linkedin;
+  // const company_linkedin = prospect.companyLinkedin;
+  // const prospect_title = prospect.title;
   const prospect_email = prospect.email;
-  const prospect_company = prospect.companyName;
+  const prospect_id = prospect.id;
+  // const prospect_company = prospect.companyName;
 
   // check if already exist in db
-  const existingProspect = await Prospect.findOne({ email: prospect_email });
+  const existingProspect = await Prospect.findOne({ id: prospect_id });
   if (existingProspect) {
     console.log("Prospect already exist in db");
     return existingProspect._id;
@@ -241,17 +255,17 @@ const generateProspectId = async (prospect) => {
 
   const newProspect = new Prospect({
     name: prospect_name,
-    linkedin: prospect_linkedin,
-    companyLinkedin: company_linkedin,
-    title: prospect_title,
+    // linkedin: prospect_linkedin,
+    // companyLinkedin: company_linkedin,
+    // title: prospect_title,
     email: prospect_email,
-    companyName: prospect_company,
+    // companyName: prospect_company,
   });
   await newProspect.save();
   // await scrapeLinkedinProfile(prospect_linkedin, newProspect._id);
   // await scrapeLinkedinCompany(company_linkedin, newProspect._id);
 
-  await scrapeLinkedinProfileProxyCurl(prospect_linkedin, newProspect._id);
+  // await scrapeLinkedinProfileProxyCurl(prospect_linkedin, newProspect._id);
   // await scrapeLinkedinCompanyProxyCurl(company_linkedin, newProspect._id);
   return newProspect._id;
 };
@@ -385,8 +399,8 @@ const generateCampaignEmails = async (
     path: "./tmp/emails.csv",
     header: [
       { id: "name", title: "Name" },
-      { id: "title", title: "Title" },
-      { id: "company", title: "Company" },
+      // { id: "title", title: "Title" },
+      // { id: "company", title: "Company" },
       { id: "email", title: "Email" },
       { id: "subject", title: "Subject" },
       { id: "body", title: "Body" },
