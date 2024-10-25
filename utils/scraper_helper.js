@@ -94,95 +94,6 @@ const scrapeCompany = (companyId, companyUrl) => {
   return;
 };
 
-const scrapeLinkedinProfileProxyCurl = async (linkedin_url) => {
-  try {
-    const apiRes = await axios.get(
-      `${process.env.PROXY_CURL_API_ENDPOINT}/api/v2/linkedin`,
-      {
-        params: {
-          url: linkedin_url,
-          fallback_to_cache: "on-error",
-          skills: "include",
-          extra: "include",
-          use_cache: "if-present",
-        },
-        headers: {
-          Authorization: `Bearer ${process.env.PROXY_CURL_API_KEY}`,
-        },
-      }
-    );
-    const { data } = apiRes;
-    return data;
-  } catch (err) {
-    console.log(err);
-  }
-};
-const scrapeLinkedinCompanyProxyCurl = async (linkedin_url) => {
-  console.log("Proxy Curl Called!!!");
-  try {
-    const apiRes = await axios.get(
-      `${process.env.PROXY_CURL_API_ENDPOINT}/api/linkedin/company`,
-      {
-        params: {
-          url: linkedin_url,
-          fallback_to_cache: "on-error",
-          extra: "include",
-          use_cache: "if-recent",
-          categories: "include",
-        },
-        headers: {
-          Authorization: `Bearer ${process.env.PROXY_CURL_API_KEY}`,
-        },
-      }
-    );
-    const { data } = apiRes;
-
-    return data;
-  } catch (err) {
-    console.log(err);
-  }
-};
-
-const fetchCompanyLogoProxyCurl = async (linkedin_url) => {
-  const execute = async () => {
-    try {
-      // call proxy curl API for logo
-      const apiRes = await axios.get(
-        `${process.env.PROXY_CURL_API_ENDPOINT}/api/linkedin/company/profile-picture`,
-        {
-          params: {
-            linkedin_company_profile_url: linkedin_url,
-          },
-          headers: {
-            Authorization: `Bearer ${process.env.PROXY_CURL_API_KEY}`,
-          },
-        }
-      );
-
-      const { data } = apiRes;
-      const profile_pic_url = data.tmp_profile_pic_url;
-      return profile_pic_url;
-    } catch (err) {
-      console.log("Error in fetchCompanyLogoProxyCurl-->");
-      throw err; // Throw the error to trigger a retry
-    }
-  };
-
-  try {
-    const result = await backOff(execute, {
-      jitter: "full",
-      delayFirstAttempt: true,
-      numOfAttempts: 7, // Optional: number of retry attempts
-      startingDelay: 1000 * 3, // Optional: starting delay in milliseconds
-      maxDelay: 1000 * 60, // Optional: maximum delay between retries
-    });
-    return result;
-  } catch (err) {
-    console.log("All retries failed:");
-    return null; // Return null if all retries fail
-  }
-};
-
 const startScraping = async (url, companyId) => {
   const response = await await axios.get(`${SCRAPER_API}/scrape`, {
     params: { companyId, url },
@@ -576,10 +487,8 @@ const scrapeAllCompanies = async (companyId) => {
 
 module.exports = {
   scrapeCompany,
-  scrapeLinkedinProfileProxyCurl,
-  scrapeLinkedinCompanyProxyCurl,
   handleScrapingWorkflow,
-  fetchCompanyLogoProxyCurl,
+
   handleBlogScrapingWorkflow,
   scrapeAllCompanies,
 };

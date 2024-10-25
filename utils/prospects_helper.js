@@ -11,7 +11,7 @@ const {
   emailGeneratePrompt,
   newProspectGenerate,
   threadAndRunV2,
-  createThreadAndRunonKnowledgeBase
+  createThreadAndRunonKnowledgeBase,
 } = require("./openai_helper");
 const {
   getAllPrompts,
@@ -36,7 +36,6 @@ const FormData = require("form-data");
 const nodemailer = require("nodemailer");
 const AWS = require("aws-sdk");
 
-
 // Configure AWS SDK with your credentials and region
 AWS.config.update({
   accessKeyId: process.env.ACCESSKEY,
@@ -46,102 +45,7 @@ AWS.config.update({
 
 const s3 = new AWS.S3();
 
-
-const scrapeLinkedinProfile = async (linkedin_url, userId) => {
-  try {
-    const response = await axios.get(`${process.env.FAST_API}/linkedinurl`, {
-      params: {
-        linkedin_url,
-        userId,
-      },
-    });
-    return response.data;
-  } catch (err) {
-    console.log(err);
-  }
-};
-
-const scrapeLinkedinCompany = async (linkedin_url, userId) => {
-  try {
-    const response = await axios.get(
-      `${process.env.FAST_API}/linkedincompany`,
-      {
-        params: {
-          linkedin_url,
-          userId,
-        },
-      }
-    );
-    return response.data;
-  } catch (err) {
-    console.log(err);
-  }
-};
-
-const scrapeLinkedinProfileProxyCurl = async (linkedin_url, userId) => {
-  try {
-    const apiRes = await axios.get(
-      `${process.env.PROXY_CURL_API_ENDPOINT}/api/v2/linkedin`,
-      {
-        params: {
-          url: linkedin_url,
-          fallback_to_cache: "on-error",
-          skills: "include",
-          extra: "include",
-          use_cache: "if-present",
-        },
-        headers: {
-          Authorization: `Bearer ${process.env.PROXY_CURL_API_KEY}`,
-        },
-      }
-    );
-
-  const { data } = apiRes;
-    // Convert JSON data to a markdown-friendly format
-  const markdownContent = `# User Profile\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
-  
-  await saveFileContent(
-    `Users/${userId}`,
-    `user_profile.md`,
-    markdownContent
-  );
-
-    return data;
-  } catch (err) {
-    console.log(err);
-  }
-};
-
-const scrapeLinkedinCompanyProxyCurl = async (linkedin_url, userId) => {
-  try {
-    const apiRes = await axios.get(
-      `${process.env.PROXY_CURL_API_ENDPOINT}/api/linkedin/company`,
-      {
-        params: {
-          url: linkedin_url,
-          fallback_to_cache: "on-error",
-          extra: "include",
-          use_cache: "if-present",
-          categories: "include",
-        },
-        headers: {
-          Authorization: `Bearer ${process.env.PROXY_CURL_API_KEY}`,
-        },
-      }
-    );
-    const { data } = apiRes;
-    await saveFileContent(
-      `Users/${userId}`,
-      `company_profile.json`,
-      JSON.stringify(data)
-    );
-    return data;
-  } catch (err) {
-    console.log(err);
-  }
-};
-
-const saveProspects = async (prospects , campaigninfo) => {
+const saveProspects = async (prospects, campaigninfo) => {
   let prsopectList = [];
   for (const prospect of prospects) {
     const prospect_name = prospect["First Name"] + " " + prospect["Last Name"];
@@ -151,8 +55,7 @@ const saveProspects = async (prospects , campaigninfo) => {
     const prospect_email = prospect["Email"];
     const prospect_industry = prospect["Industry"];
     const prospect_company = prospect["Company"];
-    
-    
+
     const prospectDetail = {
       name: prospect_name,
       linkedin: prospect_linkedin,
@@ -162,15 +65,14 @@ const saveProspects = async (prospects , campaigninfo) => {
       companyName: prospect["Company Name"],
       industry: prospect_industry,
       companyName: prospect_company,
-      objective:campaigninfo.objectives,
-      numberOfEmails:campaigninfo.numberOfEmails
+      objective: campaigninfo.objectives,
+      numberOfEmails: campaigninfo.numberOfEmails,
     };
 
     // Include the product key if the objective is "Product Engagement"
     if (campaigninfo.objectives === "Product Engagement") {
       prospectDetail.product = campaigninfo.product;
     }
-
 
     // check if already exist in db
     const existingProspect = await Prospect.findOne({ email: prospect_email });
@@ -198,8 +100,8 @@ const saveProspects = async (prospects , campaigninfo) => {
         email: prospect_email,
         industry: prospect_industry,
         companyName: prospect_company,
-        objective:campaigninfo.objectives,
-        numberOfEmails:campaigninfo.numberOfEmails
+        objective: campaigninfo.objectives,
+        numberOfEmails: campaigninfo.numberOfEmails,
       });
 
       // Include the product key if the objective is "Product Engagement"
@@ -243,18 +145,16 @@ const generatePersona = async (userId, companyData) => {
   };
   const data = await s3.getObject(getObjectParams).promise();
 
- 
-  const formData = new FormData() 
-  formData.append("file",data.Body,user_profile); // Use Buffer and filename
-  formData.append("company_id", (companyData._id).toString());
+  const formData = new FormData();
+  formData.append("file", data.Body, user_profile); // Use Buffer and filename
+  formData.append("company_id", companyData._id.toString());
 
   // Upload to the external API
   await axios.post(`${process.env.KNOWLEDGE_BASE_API}/upload`, formData);
-  
 
   let prompt;
-  
-  let objective=prospectJsonData.objective;
+
+  let objective = prospectJsonData.objective;
   if (objective == "Product Engagement") {
     prompt = ProductEngagementProspectPrompt.prompt.replaceAll(
       "$name",
@@ -274,37 +174,39 @@ const generatePersona = async (userId, companyData) => {
     );
   }
 
-
- prompt = prompt.replaceAll("$no_of_question", prospectJsonData.numberOfEmails);
+  prompt = prompt.replaceAll(
+    "$no_of_question",
+    prospectJsonData.numberOfEmails
+  );
 
   // prompt = prompt.replaceAll("$user_persona", fileContent);
   prompt = prompt.replaceAll("$company_name", companyData.name);
 
-
-  prompt+=`\nDo not include any explanations, only provide JSON response following this format without deviation.:\n ${ProductEngagementProspectPrompt.json_format}\n The JSON response:`;
-
+  prompt += `\nDo not include any explanations, only provide JSON response following this format without deviation.:\n ${ProductEngagementProspectPrompt.json_format}\n The JSON response:`;
 
   console.log("prompt for persona", prompt);
 
   // const gptRes = await newProspectGenerate(assistantId, threadId, prompt);
-  const gptRes = await createThreadAndRunonKnowledgeBase(companyData._id, prompt);
-
+  const gptRes = await createThreadAndRunonKnowledgeBase(
+    companyData._id,
+    prompt
+  );
 
   console.log("gptRes", gptRes);
 
- 
-
-  if(gptRes){
-     
-   await Prospect.findByIdAndUpdate(userId, {
+  if (gptRes) {
+    await Prospect.findByIdAndUpdate(userId, {
       $set: {
-        Questions: gptRes.Questions
+        Questions: gptRes.Questions,
       },
-    })
-
+    });
   }
 
-  await saveFileContent(`Users/${userId}`, `persona.md`, JSON.stringify(gptRes));
+  await saveFileContent(
+    `Users/${userId}`,
+    `persona.md`,
+    JSON.stringify(gptRes)
+  );
 };
 
 // const generatePersonaJson = async (userId) => {
@@ -354,41 +256,33 @@ const generateProspectId = async (prospect) => {
   return newProspect._id;
 };
 
-const generateEmail = async (
-  userId,
-  companyData,
-  campaignGuidlines
-) => {
+const generateEmail = async (userId, companyData, campaignGuidlines) => {
   try {
-    const { product, wordCount , objectives , date , eventName , eventTheme } = campaignGuidlines;
+    const { product, wordCount, objectives, date, eventName, eventTheme } =
+      campaignGuidlines;
     const userData = await Prospect.findOne({ _id: userId });
-
 
     const getObjectParams = {
       Bucket: process.env.BUCKETNAME,
       Key: `Users/${userId}/persona.md`,
     };
     const data = await s3.getObject(getObjectParams).promise();
-  
-
 
     if (!data) {
       console.log("Persona file not found");
       return null;
     }
 
-
     const formData = new FormData();
-    formData.append("file", data.Body,`Users/${userId}/persona.md`); // Use Buffer and filename
-    formData.append("company_id", (companyData._id).toString());
-
+    formData.append("file", data.Body, `Users/${userId}/persona.md`); // Use Buffer and filename
+    formData.append("company_id", companyData._id.toString());
 
     // Upload to the external API
     await axios.post(`${process.env.KNOWLEDGE_BASE_API}/upload`, formData);
 
     // const persona_fileId = await uploadFile(personaFile);
 
-    let prompt="";
+    let prompt = "";
 
     if (objectives == "Brand Awareness") {
       prompt = newEmailPromptForBrandAwareness.prompt.replaceAll(
@@ -406,18 +300,16 @@ const generateEmail = async (
         "$company_name",
         companyData.name
       );
-    
+
       prompt = prompt.replaceAll("$event_name", eventName);
       prompt = prompt.replaceAll("$event_theme", eventTheme);
       prompt = prompt.replaceAll("$date", date);
     }
 
-
-    
     prompt = prompt.replaceAll("$prospect_name", userData.name);
     prompt = prompt.replaceAll("$question", userData.Questions);
     prompt = prompt.replaceAll("$word_count", wordCount);
-    prompt = prompt.replaceAll("$no_of_question",userData.numberOfEmails);
+    prompt = prompt.replaceAll("$no_of_question", userData.numberOfEmails);
     prompt = prompt.replaceAll(
       "$additional_instructions",
       campaignGuidlines?.additionalInstructions
@@ -487,7 +379,7 @@ const generateCampaignEmails = async (
   campaignGuidlines,
   userEmail
 ) => {
-  let prospectIds = []
+  let prospectIds = [];
 
   const csvWriter = createObjectCsvWriter({
     path: "./tmp/emails.csv",
@@ -510,11 +402,7 @@ const generateCampaignEmails = async (
 
     await generatePersona(userId, companyData);
 
-    const email = await generateEmail(
-      userId,
-      companyData,
-      campaignGuidlines
-    );
+    const email = await generateEmail(userId, companyData, campaignGuidlines);
 
     let result = [];
     email?.emails?.forEach((element) => {
@@ -527,9 +415,8 @@ const generateCampaignEmails = async (
         body: element.body || "",
       });
     });
-    
+
     return result;
-    
   };
 
   const emails = await Promise.all(prospects.map(generateEmailForProspect));
@@ -544,7 +431,7 @@ const generateCampaignEmails = async (
   await saveFileContent(`Campaign/${campaignId}`, "emails.csv", csvContent);
 
   // Send CSV to the user email address
-   sendCustomEmails(userEmail, csvContent);
+  sendCustomEmails(userEmail, csvContent);
 
   console.log("Emails generated successfully");
 };

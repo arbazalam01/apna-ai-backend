@@ -686,9 +686,7 @@ const runAPrompt = async (req, res) => {
       Prompt = allPrompts.find((item) => item.dbKey == type).prompt;
     }
 
-    const { assistantId } = await isAssistantExist(companyId);
     await runASinglePrompt(companyId, type, assistantId, Prompt);
-    console.log("Done-->");
     res.json({ message: "Success" });
   } catch (err) {
     console.log(err);
@@ -1147,10 +1145,10 @@ const getAllDataV2 = async (req, res) => {
     const competitors = await Company.find({ _id: { $in: competitorsIds } });
 
     // Make the external API call
-    const response = await axios.get(
-      `${KNOWLEDGE_BASE_API}/files?company_id=${companyId}`
-    );
-    const externalData = response.data; // Assuming the response data is an object
+    // const response = await axios.get(
+    //   `${KNOWLEDGE_BASE_API}/files?company_id=${companyId}`
+    // );
+    // const externalData = response.data; // Assuming the response data is an object
 
     if (!company)
       return res.json({
@@ -1165,7 +1163,6 @@ const getAllDataV2 = async (req, res) => {
       company,
       competitors,
       toptrends: relation?.toptrends,
-      assets: externalData.files,
     });
   } catch (err) {}
 };

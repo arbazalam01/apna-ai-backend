@@ -73,7 +73,7 @@ const fetchCompanyData = async (companyId) => {
 const fetchRelationData = async (companyId) => {
   const relationData = await Relation.find({ companyId: companyId });
   return relationData;
-}
+};
 
 async function generateJSONFromtext(prompt, type) {
   const openai = new OpenAI({
@@ -150,10 +150,9 @@ const isAssistantExist = async (companyId) => {
     const localDir = `${companyId}`;
     const scrapedFilePath = await fetchFileFromS3(s3FilePath, localDir);
     const openAiFileId = await uploadFile(scrapedFilePath);
-    const vectorStoreId = await createVectorStore(
-      companyData.name,
-      [openAiFileId]
-    );
+    const vectorStoreId = await createVectorStore(companyData.name, [
+      openAiFileId,
+    ]);
 
     const assistantId = await createAssistantV2(
       vectorStoreId,
@@ -181,15 +180,14 @@ const isAssistantV2Exist = async (companyId) => {
     // const scrapedFilePath = await fetchMultipleFileFromS3(companyId);
     const filePath = await fetchCompanyReport(companyId);
 
+    // Make the external API call
+    const response = await axios.get(
+      `${KNOWLEDGE_BASE_API}/files?company_id=${companyId}`
+    );
+    const assets = response.data.files; // Assuming the response data is an object
 
-     // Make the external API call
-     const response = await axios.get(`${KNOWLEDGE_BASE_API}/files?company_id=${companyId}`);
-     const assets = response.data.files; // Assuming the response data is an object
- 
-
-
-     // Get a list of file paths from the S3 URLs
-     const filePaths = await Promise.all(
+    // Get a list of file paths from the S3 URLs
+    const filePaths = await Promise.all(
       assets.map(async (asset) => {
         const s3FilePath = `${companyId}/assets/${asset.filename}`;
         const localDir = `${companyId}`;
@@ -208,7 +206,7 @@ const isAssistantV2Exist = async (companyId) => {
 
     const vectorStoreId = await createVectorStore(
       `${companyData.name}_Information`,
-      [...openAiFileIds,openAiFileId]
+      [...openAiFileIds, openAiFileId]
     );
     const assistantId = await createAssistantV2(
       vectorStoreId,
@@ -446,9 +444,6 @@ const runASinglePrompt = async (
 
   const currentPrompt = customPrompt || section.prompt;
 
-  console.log("Section-->", section);
-  console.log("Type--->", type);
-
   const updatedPrompt = {
     ...section,
     prompt: currentPrompt.replaceAll("$company_name", name),
@@ -471,9 +466,11 @@ const runASinglePrompt = async (
     );
 
     if (assistantFile == null) {
-      jsonData = await createThreadAndRunonKnowledgeBase(companyId, finalPrompt);
+      jsonData = await createThreadAndRunonKnowledgeBase(
+        companyId,
+        finalPrompt
+      );
     } else {
-      const assistant_fileId = await uploadFile(assistantFile);
       jsonData = await createThreadAndRunonKnowledgeBase(
         companyId,
         finalPrompt
@@ -483,10 +480,6 @@ const runASinglePrompt = async (
 
   await saveAIOutput(companyId, jsonData, section);
 
-  // linkedin data scrape
-  if (type == "about") {
-    await companyLinkedInInfo(companyId, about);
-  }
   if (type == "products") {
     await removeDuplicateProductsAndServices(companyId);
   }
@@ -530,5 +523,5 @@ module.exports = {
   runAllPromptHelper,
   isReportDone,
   downloadCompanyLogo,
-  runASinglePrompt
+  runASinglePrompt,
 };
