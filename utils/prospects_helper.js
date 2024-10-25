@@ -244,13 +244,18 @@ const generateProspectId = async (prospect) => {
   // const prospect_title = prospect.title;
   const prospect_email = prospect.email;
   const prospect_id = prospect.id;
+  const prospect_age = prospect.age;
+  const prospect_gender = prospect.gender;
+  const prospect_location = prospect.location;
+  const prospect_payment_method = prospect.paymentMethod;
+
   // const prospect_company = prospect.companyName;
 
   // check if already exist in db
   const existingProspect = await Prospect.findOne({ id: prospect_id });
   if (existingProspect) {
     console.log("Prospect already exist in db");
-    return existingProspect._id;
+    return existingProspect.id;
   }
 
   const newProspect = new Prospect({
@@ -260,6 +265,11 @@ const generateProspectId = async (prospect) => {
     // title: prospect_title,
     email: prospect_email,
     // companyName: prospect_company,
+    age: prospect_age,
+    gender: prospect_gender,
+    location: prospect_location,
+    paymentMethod: prospect_payment_method,
+    id: prospect_id,
   });
   await newProspect.save();
   // await scrapeLinkedinProfile(prospect_linkedin, newProspect._id);
@@ -267,7 +277,7 @@ const generateProspectId = async (prospect) => {
 
   // await scrapeLinkedinProfileProxyCurl(prospect_linkedin, newProspect._id);
   // await scrapeLinkedinCompanyProxyCurl(company_linkedin, newProspect._id);
-  return newProspect._id;
+  return newProspect.id;
 };
 
 const generateEmail = async (userId, companyData, campaignGuidlines) => {
