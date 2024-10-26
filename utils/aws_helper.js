@@ -138,12 +138,12 @@ const fetchFileFromS3 = async (key, localDir, bucketName = defaultBucket) => {
   }
 };
 
-const fetchDataFromS3 = async (folder,file) => {
+const fetchDataFromS3 = async (folder, file) => {
   try {
     const bucketName = defaultBucket;
     const key = `${folder}/${file}`;
 
-    console.log("key",key);
+    console.log("key", key);
 
     const getObjectParams = {
       Bucket: bucketName,
@@ -230,7 +230,7 @@ const isFileExistS3 = async (key, bucketName = defaultBucket) => {
     console.log("Metadata:", Metadata);
     return Metadata;
   } catch (error) {
-    console.error("Error checking if file exists in S3 in isFileExistS3:", error);
+    console.error("File not exist in S3");
     return null;
   }
 };
