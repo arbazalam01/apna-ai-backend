@@ -723,10 +723,7 @@ const getAllCalendarsByCompany = async (req, res) => {
         companyId: req.params.companyId,
       });
   
-      if (!calendarInput || calendarInput.length === 0) {
-        res.status(404).json({ message: "Calendar input not found" });
-        return;
-      }
+      
   
       // Sort the calendars based on startDate in descending order
       calendarInput.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
@@ -966,7 +963,7 @@ const getSummaryData = async (req, res) => {
 };
 
 const getThemes = async (req, res) => {
-  const { segment, companyId } = req.body;
+  const {segment, companyId } = req.body;
   try {
     const company = await Company.findById(companyId);
     
@@ -974,7 +971,7 @@ const getThemes = async (req, res) => {
     
     let prompt = Themes.prompt.replaceAll("$company_name", company.name);
 
-    prompt = prompt.replaceAll("$segment", segment);
+    prompt = prompt.replaceAll("$segment",JSON.stringify(segment[0]));
 
     const finalPrompt = `${prompt}\n Do not include any explanations, only provide JSON response following this format without deviation.:\n ${Themes.json_format}\n The JSON response:`;
 
