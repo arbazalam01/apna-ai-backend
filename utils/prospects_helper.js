@@ -52,14 +52,14 @@ const saveProspects = async (prospects, campaigninfo) => {
     // const prospect_linkedin = prospect["Prospect Linkedin URL"];
     // const company_linkedin = prospect["Company Linkedin URL"];
     // const prospect_title = prospect["Title"];
-    // const prospect_email = prospect["Email"];
+    const prospect_email = prospect["Email"];
     // const prospect_industry = prospect["Industry"];
     // const prospect_company = prospect["Company"];
     const prospect_age = prospect["Age"];
     const prospect_gender = prospect["Gender"];
     const prospect_location = prospect["Location"];
     const prospect_payment_method = prospect["Payment Method"];
-    const prospect_id = prospect["ID"];
+    // const prospect_id = prospect["ID"];
 
     const prospectDetail = {
       name: prospect_name,
@@ -76,7 +76,7 @@ const saveProspects = async (prospects, campaigninfo) => {
       // companyName: prospect_company,
       objective: campaigninfo.objectives,
       numberOfEmails: campaigninfo.numberOfEmails,
-      id: prospect_id,
+      // id: prospect_id,
     };
 
     // Include the product key if the objective is "Product Engagement"
@@ -85,7 +85,7 @@ const saveProspects = async (prospects, campaigninfo) => {
     }
 
     // check if already exist in db
-    const existingProspect = await Prospect.findOne({ id: prospect_id });
+    const existingProspect = await Prospect.findOne({ email: prospect_email });
     if (existingProspect) {
       // Update the existing prospect's numberOfEmails and objective
       existingProspect.numberOfEmails = campaigninfo.numberOfEmails;
@@ -97,7 +97,7 @@ const saveProspects = async (prospects, campaigninfo) => {
 
       // Save the updated prospect
       await existingProspect.save();
-      // prospectDetail._id = existingProspect._id;
+      prospectDetail._id = existingProspect._id;
       prsopectList.push(prospectDetail);
     } else {
       // await scrapeLinkedinProfile(prospect_linkedin, newProspect._id);
@@ -111,12 +111,12 @@ const saveProspects = async (prospects, campaigninfo) => {
         // linkedin: prospect_linkedin,
         // companyLinkedin: company_linkedin,
         // title: prospect_title,
-        // email: prospect_email,
+        email: prospect_email,
         // industry: prospect_industry,
         // companyName: prospect_company,
         objective: campaigninfo.objectives,
         numberOfEmails: campaigninfo.numberOfEmails,
-        id: prospect_id,
+        // id: prospect_id,
       });
 
       // Include the product key if the objective is "Product Engagement"
@@ -133,7 +133,7 @@ const saveProspects = async (prospects, campaigninfo) => {
 
       await newProspect.save();
 
-      // prospectDetail._id = newProspect._id;
+      prospectDetail._id = newProspect._id;
       prsopectList.push(prospectDetail);
     }
   }
@@ -455,7 +455,7 @@ const generateCampaignEmails = async (
   await saveFileContent(`Campaign/${campaignId}`, "emails.csv", csvContent);
 
   // Send CSV to the user email address
-  sendCustomEmails(userEmail, csvContent);
+  // sendCustomEmails(userEmail, csvContent);
 
   console.log("Emails generated successfully");
 };

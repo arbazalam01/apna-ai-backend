@@ -17,8 +17,6 @@ const upload = multer({ storage: storage });
 router.post("/uploadProfiles", upload.single("file"), uploadProfiles);
 router.get("/getAllProspects", getAllProspects);
 router.post("/createPersona", createPersona);
-router.get("/downloadEmails", downloadEmails);
-router.get("/prospectEmail", getProspectEmail);
 router.post("/createEmails", createEmails);
 router.get("/downloadPersona", downloadPersona);
 
