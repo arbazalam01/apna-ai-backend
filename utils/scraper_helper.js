@@ -67,6 +67,7 @@ const scrapeHomepage = async (url) => {
     const reqBody = {
       url,
       waitFor: 5000,
+      excludeTags: ["link", "a", "img"],
     };
     const reqOptions = {
       headers: {
