@@ -8,7 +8,6 @@ const customerRouter = require("./routes/customer.js");
 const authRoutes = require("./routes/auth.js");
 const campaignRoutes = require("./routes/campaign.js");
 const prospectsRouter = require("./routes/prospects.js");
-const personasRouter = require("./routes/persona.js");
 const calendarRouter = require("./routes/calendar.js");
 const userSegments = require("./routes/customer_segmentation.js");
 const cookieParser = require("cookie-parser");
@@ -47,7 +46,6 @@ app.use("/customer", isAuthenticated, customerRouter);
 app.use("/api", authRoutes);
 app.use("/campaign", isAuthenticated, campaignRoutes);
 app.use("/prospects", isAuthenticated, prospectsRouter);
-app.use("/personas", isAuthenticated, personasRouter);
 app.use("/calendar", calendarRouter);
 app.use("/usersegments", userSegments);
 

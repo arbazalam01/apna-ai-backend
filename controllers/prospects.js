@@ -119,7 +119,7 @@ const createEmails = async (req, res) => {
     const prospects = await Prospect.find({ _id: { $in: prospectIds } });
     const campaign = await createCampaign(companyId);
     const campaignId = campaign._id;
-    const userEmail = req.cookies.email;
+    // const userEmail = req.cookies.email;
 
     // Find the user by decoded user ID (replace with actual database query)
     //  const user = await User.findById(decodedToken._id).exec();
@@ -131,7 +131,7 @@ const createEmails = async (req, res) => {
       campaignId,
       companyId,
       campaignGuidlines,
-      userEmail
+      // userEmail
     );
     res.json({ message: "Emails created successfully", campaignId });
   } catch (error) {

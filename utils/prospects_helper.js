@@ -146,26 +146,26 @@ const generatePersona = async (userId, companyData) => {
     console.log("Persona already exist in s3");
     return;
   }
-  const user_profile = `Users/${userId}/user_profile.md`;
-  // const company_profile = `Users/${userId}/company_profile.json`;
-  const prospectJsonData = await Prospect.findOne({ id: userId });
+  // const user_profile = `Users/${userId}/user_profile.md`;
+  // // const company_profile = `Users/${userId}/company_profile.json`;
+  const prospectJsonData = await Prospect.findOne({ _id: userId });
 
-  const getObjectParams = {
-    Bucket: process.env.BUCKETNAME,
-    Key: `Users/${userId}/user_profile.md`,
-  };
-  const data = await s3.getObject(getObjectParams).promise();
+  // const getObjectParams = {
+  //   Bucket: process.env.BUCKETNAME,
+  //   Key: `Users/${userId}/user_profile.md`,
+  // };
+  // const data = await s3.getObject(getObjectParams).promise();
 
-  const formData = new FormData();
-  formData.append("file", data.Body, user_profile); // Use Buffer and filename
-  const uniqueId = `${userId}_${companyData._id}`;
-  formData.append("company_id", uniqueId);
+  // const formData = new FormData();
+  // formData.append("file", data.Body, user_profile); // Use Buffer and filename
+  // const uniqueId = `${userId}_${companyData._id}`;
+  // formData.append("company_id", uniqueId);
 
-  // Upload to the external API
-  await axios.post(
-    `${process.env.KNOWLEDGE_BASE_API}/create-embeddings`,
-    formData
-  );
+  // // Upload to the external API
+  // await axios.post(
+  //   `${process.env.KNOWLEDGE_BASE_API}/create-embeddings`,
+  //   formData
+  // );
 
   let prompt;
 
@@ -199,11 +199,15 @@ const generatePersona = async (userId, companyData) => {
 
   prompt += `\nDo not include any explanations, only provide JSON response following this format without deviation.:\n ${ProductEngagementProspectPrompt.json_format}\n The JSON response:`;
 
+  prompt += `Below is the information about the prospect:\n${JSON.stringify(
+    prospectJsonData
+  )}`;
   console.log("prompt for persona", prompt);
 
-  // const gptRes = await newProspectGenerate(assistantId, threadId, prompt);
-
-  const gptRes = await createThreadAndRunonKnowledgeBase(uniqueId, prompt);
+  const gptRes = await createThreadAndRunonKnowledgeBase(
+    companyData._id,
+    prompt
+  );
 
   console.log("gptRes", gptRes);
 
@@ -243,7 +247,6 @@ const generateProspectId = async (prospect) => {
   // const company_linkedin = prospect.companyLinkedin;
   // const prospect_title = prospect.title;
   const prospect_email = prospect.email;
-  const prospect_id = prospect.id;
   const prospect_age = prospect.age;
   const prospect_gender = prospect.gender;
   const prospect_location = prospect.location;
@@ -252,10 +255,10 @@ const generateProspectId = async (prospect) => {
   // const prospect_company = prospect.companyName;
 
   // check if already exist in db
-  const existingProspect = await Prospect.findOne({ id: prospect_id });
+  const existingProspect = await Prospect.findOne({ email: prospect_email });
   if (existingProspect) {
     console.log("Prospect already exist in db");
-    return existingProspect.id;
+    return existingProspect._id;
   }
 
   const newProspect = new Prospect({
@@ -269,7 +272,6 @@ const generateProspectId = async (prospect) => {
     gender: prospect_gender,
     location: prospect_location,
     paymentMethod: prospect_payment_method,
-    id: prospect_id,
   });
   await newProspect.save();
   // await scrapeLinkedinProfile(prospect_linkedin, newProspect._id);
@@ -277,7 +279,7 @@ const generateProspectId = async (prospect) => {
 
   // await scrapeLinkedinProfileProxyCurl(prospect_linkedin, newProspect._id);
   // await scrapeLinkedinCompanyProxyCurl(company_linkedin, newProspect._id);
-  return newProspect.id;
+  return newProspect._id;
 };
 
 const generateEmail = async (userId, companyData, campaignGuidlines) => {
@@ -298,11 +300,15 @@ const generateEmail = async (userId, companyData, campaignGuidlines) => {
     }
 
     const formData = new FormData();
+    const uniqueId = `${userId}_${companyData._id}`;
     formData.append("file", data.Body, `Users/${userId}/persona.md`); // Use Buffer and filename
-    formData.append("company_id", companyData._id.toString());
+    formData.append("company_id", uniqueId.toString());
 
     // Upload to the external API
-    await axios.post(`${process.env.KNOWLEDGE_BASE_API}/upload`, formData);
+    await axios.post(
+      `${process.env.KNOWLEDGE_BASE_API}/create-embeddings`,
+      formData
+    );
 
     // const persona_fileId = await uploadFile(personaFile);
 
@@ -345,7 +351,7 @@ const generateEmail = async (userId, companyData, campaignGuidlines) => {
 
     console.log("finalPrompt", finalPrompt);
     const gptRes = await createThreadAndRunonKnowledgeBase(
-      companyData._id,
+      uniqueId,
       finalPrompt
     );
 
@@ -400,8 +406,8 @@ const generateCampaignEmails = async (
   prospects,
   campaignId,
   companyId,
-  campaignGuidlines,
-  userEmail
+  campaignGuidlines
+  // userEmail
 ) => {
   let prospectIds = [];
 
@@ -423,6 +429,8 @@ const generateCampaignEmails = async (
   const generateEmailForProspect = async (prospect) => {
     const userId = await generateProspectId(prospect);
     prospectIds.push(userId);
+
+    console.log("Generating persona for user:", userId);
 
     await generatePersona(userId, companyData);
 
