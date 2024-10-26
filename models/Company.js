@@ -114,8 +114,6 @@ const CompanySchema = new mongoose.Schema(
     dateofScrape: Date,
     summary: String,
     BrandVoice: String,
-    assistantId: String,
-    assistantV2Id: String,
     fileId: [String],
     threadId: String,
     isScrapingDone: {

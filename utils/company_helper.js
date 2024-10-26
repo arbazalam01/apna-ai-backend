@@ -269,12 +269,12 @@ const runAllPromptHelper = async (companyId) => {
 
   // run concurrently
   const firstHalfPromises = firstHalf.map((section) =>
-    runASinglePrompt(companyId, section.dbKey, assistantId)
+    runASinglePrompt(companyId, section.dbKey)
   );
   await Promise.all(firstHalfPromises);
 
   const secondHalfPromises = secondHalf.map((section) =>
-    runASinglePrompt(companyId, section.dbKey, assistantId)
+    runASinglePrompt(companyId, section.dbKey)
   );
   await Promise.all(secondHalfPromises);
 
@@ -390,12 +390,7 @@ const downloadCompanyLogo = async (companyId, profile_pic_url, type) => {
   }
 };
 
-const runASinglePrompt = async (
-  companyId,
-  type,
-  assistantId,
-  customPrompt = null
-) => {
+const runASinglePrompt = async (companyId, type, customPrompt = null) => {
   const allPrompts = getAllPrompts();
   let section = allPrompts.find((item) => item.dbKey == type);
   if (type == "blogs") {
