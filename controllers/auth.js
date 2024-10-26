@@ -340,7 +340,7 @@ const sendOtpEmail = async (email, otp) => {
     to: email,
     subject: "Your OTP Code",
     html: `
-      <h1>Welcome to Aibiliti</h1>
+      <h1>Welcome to Apna Content</h1>
       <p>Thank you for signing up! Please use the otp to login. It will expire in 5 minutes:</p>
       <p>${otp}</p>
       <p>If you did not sign up for this account, please ignore this email.</p>
