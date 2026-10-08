@@ -1,14 +1,10 @@
-const axios = require("axios");
 const { Firecrawl } = require("firecrawl");
 const { saveFileContent } = require("./aws_helper");
 const urlsToExclude = require("./urls_to_exclude");
 const urlsToInclude = require("./urls_to_include");
 const Relation = require("../models/Relation");
 const { backOff } = require("exponential-backoff");
-const FormData = require("form-data");
-
-const SCRAPER_API = process.env.FAST_API;
-const KNOWLEDGE_BASE_API = process.env.KNOWLEDGE_BASE_API;
+const { indexDocument } = require("./openai_helper");
 
 const firecrawl = new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY });
 
@@ -61,18 +57,6 @@ const scrapeHomepage = async (url) => {
   } catch (error) {
     console.error("Error in scraping workflow:", error);
   }
-};
-
-const scrapeCompany = (companyId, companyUrl) => {
-  axios.get(`${SCRAPER_API}/scrape?companyId=${companyId}&url=${companyUrl}`);
-  return;
-};
-
-const startScraping = async (url, companyId) => {
-  const response = await await axios.get(`${SCRAPER_API}/scrape`, {
-    params: { companyId, url },
-  });
-  return response.data.job_id;
 };
 
 // Crawls the site (plus its homepage) and uploads the grouped markdown to S3
@@ -237,13 +221,7 @@ const uploadScrapedData = async (scrapedData, companyId) => {
   //   .promise();
   await Promise.all(savePromises);
 
-  const formData = new FormData();
-  formData.append("file", combinedMarkdown.trim(), "combined.md"); // Use Buffer and filename
-  formData.append("company_id", companyId.toString());
-
-  await axios.post(`${KNOWLEDGE_BASE_API}/create-embeddings`, formData, {
-    headers: formData.getHeaders(), // Pass correct headers for multipart/form-data
-  });
+  await indexDocument(companyId.toString(), "combined.md", combinedMarkdown);
 
   console.log(`Upload completed for company ${companyId}`);
 };
@@ -364,7 +342,6 @@ const scrapeAllCompanies = async (companyId) => {
 };
 
 module.exports = {
-  scrapeCompany,
   handleScrapingWorkflow,
 
   handleBlogScrapingWorkflow,

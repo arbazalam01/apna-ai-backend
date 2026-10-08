@@ -1,9 +1,6 @@
 const { google } = require("googleapis");
 const { DataInsight } = require("../lib/function_calling");
-const {
-  isAssistantV2Exist,
-  fetchCompanyData,
-} = require("../utils/company_helper");
+const { fetchCompanyData } = require("../utils/company_helper");
 const { createThreadAndRunonKnowledgeBase } = require("../utils/openai_helper");
 const { getPostAnalysisV2 } = require("../utils/post_analysis");
 const { WebsiteInsight } = require("../utils/datainsights/website");

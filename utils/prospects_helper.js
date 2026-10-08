@@ -7,12 +7,8 @@ const {
   s3,
 } = require("./aws_helper");
 const {
-  uploadFile,
-  runProspect,
-  emailGeneratePrompt,
-  newProspectGenerate,
-  threadAndRunV2,
   createThreadAndRunonKnowledgeBase,
+  indexDocument,
 } = require("./openai_helper");
 const {
   getAllPrompts,
@@ -28,13 +24,11 @@ const {
 } = require("../lib/function_calling");
 const { default: axios } = require("axios");
 const Company = require("../models/Company");
-const { isAssistantExist, isAssistantV2Exist } = require("./company_helper");
 const fs = require("fs");
 const Campaign = require("../models/Campaign");
 const { createObjectCsvWriter } = require("csv-writer");
 const { csvToJson } = require("./csv_parser");
-const FormData = require("form-data");
-const nodemailer = require("nodemailer");
+const transporter = require("./mailer");
 
 const saveProspects = async (prospects, campaigninfo) => {
   let prsopectList = [];
@@ -290,19 +284,11 @@ const generateEmail = async (userId, companyData, campaignGuidlines) => {
       return null;
     }
 
-    const formData = new FormData();
     const uniqueId = `${userId}_${companyData._id}`;
-    formData.append(
-      "file",
-      Buffer.from(await data.Body.transformToByteArray()),
-      `Users/${userId}/persona.md`
-    ); // Use Buffer and filename
-    formData.append("company_id", uniqueId.toString());
-
-    // Upload to the external API
-    await axios.post(
-      `${process.env.KNOWLEDGE_BASE_API}/create-embeddings`,
-      formData
+    await indexDocument(
+      uniqueId,
+      "persona.md",
+      await data.Body.transformToString()
     );
 
     // const persona_fileId = await uploadFile(personaFile);
@@ -367,14 +353,6 @@ const createCampaign = async (name, prospectIds, companyId) => {
 };
 
 function sendCustomEmails(email, csvContent) {
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
-  });
-
   const mailOptions = {
     from: process.env.GMAIL_USER,
     to: email,

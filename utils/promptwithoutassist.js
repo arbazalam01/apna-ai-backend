@@ -9,6 +9,7 @@ const SectionsWithoutAssistance = [
         Years of Experience : $yearofexperience
         Location : $location
         I want you to include Demographic, Psychographic details along with Pain Points, Motivations, Challenges and Interests.`,
+        json_format: `{"Demographic": "Array of string", "Psychographic": "Array of string", "PainPoints": "Array of string", "Motivations": "Array of string", "Challenges": "Array of string", "Interests": "Array of string"}`,
         thread_id: "",
       }
 

@@ -1,28 +1,15 @@
 const { InitialMessage, getAllPrompts } = require("../lib/function_calling");
 const Company = require("../models/Company");
 const Relation = require("../models/Relation");
-const { OpenAI } = require("openai");
 const {
   fetchFileFromS3,
-  fetchCompanyReport,
   ensureDirectoryExists,
   s3,
 } = require("./aws_helper");
-const {
-  uploadFile,
-  createVectorStore,
-  createAssistantV2,
-  createThreadAndRun,
-  createThreadAndRunonKnowledgeBase,
-  threadAndRunV2,
-} = require("./openai_helper");
-const Function_Info = require("./functions_info");
+const { createThreadAndRunonKnowledgeBase } = require("./openai_helper");
 const { default: axios } = require("axios");
 const fs = require("fs");
 const { Upload } = require("@aws-sdk/lib-storage");
-const openaiapi = process.env.OPEN_API_KEY;
-const GPT_MODEL = process.env.GPT_MODEL;
-const KNOWLEDGE_BASE_API = process.env.KNOWLEDGE_BASE_API;
 const { Blogs } = require("../lib/function_calling");
 
 const addCompany = async (data) => {
@@ -68,152 +55,6 @@ const fetchCompanyData = async (companyId) => {
 const fetchRelationData = async (companyId) => {
   const relationData = await Relation.find({ companyId: companyId });
   return relationData;
-};
-
-async function generateJSONFromtext(prompt, type) {
-  const openai = new OpenAI({
-    apiKey: openaiapi,
-  });
-
-  const sectionInfo = Function_Info.find((info) => info.section === type);
-
-  const chatCompletion = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo-1106",
-    messages: [{ role: "user", content: prompt }],
-    functions: [
-      {
-        name: "format_json",
-        description: "Convert text into json",
-        parameters: sectionInfo.parameters,
-      },
-    ],
-    function_call: "auto",
-  });
-
-  try {
-    if (chatCompletion.choices[0].message?.function_call?.arguments) {
-      if (
-        JSON.parse(chatCompletion.choices[0].message?.function_call?.arguments)
-          .type?.length != 0
-      ) {
-        let val = JSON.parse(
-          chatCompletion.choices[0].message.function_call.arguments
-        );
-
-        return val.toptrends;
-      }
-    }
-  } catch (err) {
-    console.log("error", err);
-    return;
-  }
-}
-
-const fetchTopTrends = async (websiteUrl) => {
-  // running top industry trends prompts
-  const openai = new OpenAI({
-    apiKey: openaiapi,
-  });
-  openai.chat.completions
-    .create({
-      model: "gpt-4-turbo-preview",
-      messages: [
-        {
-          role: "user",
-          content: `Give me the name of the industry the company whose is ${websiteUrl} and then give me the top five themes and trends for this industry `,
-        },
-      ],
-    })
-    .then(async (response) => {
-      let messageText = response.choices[0].message.content;
-
-      const res = await generateJSONFromtext(`${messageText}`, "toptrends");
-
-      return res;
-    })
-    .catch((error) => {
-      console.error("Error:", error);
-      res.status(500).json({ error: "Failed to process the request." });
-    });
-};
-
-const isAssistantExist = async (companyId) => {
-  let companyData = await fetchCompanyData(companyId);
-  const isScrapingDone = companyData.isScrapingDone;
-  if (!isScrapingDone) {
-    const s3FilePath = `${companyId}/combined.md`;
-    const localDir = `${companyId}`;
-    const scrapedFilePath = await fetchFileFromS3(s3FilePath, localDir);
-    const openAiFileId = await uploadFile(scrapedFilePath);
-    const vectorStoreId = await createVectorStore(companyData.name, [
-      openAiFileId,
-    ]);
-
-    const assistantId = await createAssistantV2(
-      vectorStoreId,
-      "Company Info Extractor"
-    );
-    // const threadId = await createEmptyThread();
-    const updateFields = {
-      assistantId,
-      fileId: openAiFileId,
-      isScrapingDone: true,
-    };
-    companyData = await updateCompanyData(companyId, updateFields);
-
-    // const promptSection = InitialMessage;
-    // await runSinglePrompt(assistantId, threadId, promptSection);
-  }
-  return companyData;
-};
-
-const isAssistantV2Exist = async (companyId) => {
-  const assistantV2Instruction = process.env.ASSISTANT_INSTRUCTION_V2;
-  let companyData = await fetchCompanyData(companyId);
-  const isAssistantV2Exist = companyData.assistantV2Id;
-  if (!isAssistantV2Exist) {
-    // const scrapedFilePath = await fetchMultipleFileFromS3(companyId);
-    const filePath = await fetchCompanyReport(companyId);
-
-    // Make the external API call
-    const response = await axios.get(
-      `${KNOWLEDGE_BASE_API}/files?company_id=${companyId}`
-    );
-    const assets = response.data.files; // Assuming the response data is an object
-
-    // Get a list of file paths from the S3 URLs
-    const filePaths = await Promise.all(
-      assets.map(async (asset) => {
-        const s3FilePath = `${companyId}/assets/${asset.filename}`;
-        const localDir = `${companyId}`;
-        const filePath = await fetchFileFromS3(s3FilePath, localDir);
-        return filePath;
-      })
-    );
-
-    const openAiFileIds = await Promise.all(
-      filePaths.map(async (filePath) => {
-        return await uploadFile(filePath);
-      })
-    );
-
-    const openAiFileId = await uploadFile(filePath);
-
-    const vectorStoreId = await createVectorStore(
-      `${companyData.name}_Information`,
-      [...openAiFileIds, openAiFileId]
-    );
-    const assistantId = await createAssistantV2(
-      vectorStoreId,
-      "Company AI Assistant",
-      assistantV2Instruction
-    );
-    const updateFields = {
-      assistantV2Id: assistantId,
-    };
-    companyData = await updateCompanyData(companyId, updateFields);
-  }
-  return companyData;
 };
 
 const saveAIOutput = async (companyId, aiOutput, section) => {
@@ -293,8 +134,7 @@ const runAllPromptHelper = async (companyId) => {
       prompt: `Give me the name of the industry the company whose is ${companyData.website} and then give me the top five themes and trends for this industry `,
       json_format: `{"toptrends" : "Array of string" }`,
     };
-    // const newAssistantId = process.env.OPENAI_ASSISTANT_ID;
-    const newCompanyData = await isAssistantExist(companyId);
+    await updateCompanyData(companyId, { isScrapingDone: true });
 
     const finalPrompt = `${topTrendsPrompt.prompt}.\nDo not include any explanations, only provide JSON response following this format without deviation.:\n ${topTrendsPrompt.json_format}\n The JSON response:`;
     let jsonData = await createThreadAndRunonKnowledgeBase(
@@ -307,8 +147,6 @@ const runAllPromptHelper = async (companyId) => {
       { companyId },
       { toptrends: jsonData.toptrends }
     );
-
-    await isAssistantV2Exist(companyId);
   }
 };
 
@@ -470,11 +308,8 @@ module.exports = {
   isCompanyScrapingDone,
   updateCompanyData,
   fetchCompanyData,
-  isAssistantExist,
   saveAIOutput,
-  fetchTopTrends,
   dateFormatter,
-  isAssistantV2Exist,
   runAllPromptHelper,
   isReportDone,
   downloadCompanyLogo,

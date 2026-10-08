@@ -1,517 +1,114 @@
 const { OpenAI } = require("openai");
-const fs = require("fs");
-const { deleteFile } = require("./aws_helper");
-const { jsonrepair } = require("jsonrepair");
-const { backOff } = require("exponential-backoff");
-const axios = require("axios");
+const xlsx = require("xlsx");
+const KnowledgeChunk = require("../models/KnowledgeChunk");
 
+// OpenRouter speaks the OpenAI Responses API; the SDK retries 429/5xx itself.
 const openai = new OpenAI({
-  apiKey: process.env.OPEN_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKey: process.env.OPENROUTER_API_KEY,
+  maxRetries: 4,
 });
 
-const ASSISTANT_INSTRUCTION = process.env.ASSISTANT_INSTRUCTION;
-const KNOWLEDGE_BASE_API = process.env.KNOWLEDGE_BASE_API;
+const MODEL = process.env.OPENROUTER_MODEL;
+const EMBEDDING_MODEL = "openai/text-embedding-3-small";
 
-const uploadFile = async (filePath) => {
-  try {
-    const file = await openai.files.create({
-      purpose: "assistants",
-      file: fs.createReadStream(filePath),
-    });
+const KB_INSTRUCTIONS = `You are an expert text and data summarizer. You are given a markdown containing the company information. Always take context from it. If you don't find the answer there, use your general intelligence and the given data to construct a meaningful response.
+Respond only with a JSON object following the format given in the user query.
 
-    return file.id;
-  } catch (err) {
-    return null;
+Context:
+`;
+
+const generateText = async (input) => {
+  const response = await openai.responses.create({ model: MODEL, input });
+  return response.output_text;
+};
+
+// JSON mode: the model must return a valid JSON object, so no repair step.
+// The shape comes from the format described in the prompt.
+const generateJSON = async (input, instructions) => {
+  const response = await openai.responses.create({
+    model: MODEL,
+    instructions,
+    input,
+    text: { format: { type: "json_object" } },
+  });
+  return JSON.parse(response.output_text);
+};
+
+const embed = async (input) => {
+  const { data } = await openai.embeddings.create({
+    model: EMBEDDING_MODEL,
+    input,
+    encoding_format: "float",
+  });
+  return data.map((item) => item.embedding);
+};
+
+// ponytail: fixed-size character windows, switch to a paragraph-aware splitter if retrieval quality suffers
+const splitText = (text, size = 1000, overlap = 200) => {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += size - overlap) {
+    chunks.push(text.slice(i, i + size));
+    if (i + size >= text.length) break;
+  }
+  return chunks;
+};
+
+// Re-indexing the same source replaces its old chunks.
+const indexDocument = async (collectionId, source, text) => {
+  await KnowledgeChunk.deleteMany({ collectionId, source });
+  const chunks = splitText(text.trim());
+  for (let i = 0; i < chunks.length; i += 100) {
+    const batch = chunks.slice(i, i + 100);
+    const embeddings = await embed(batch);
+    await KnowledgeChunk.insertMany(
+      batch.map((text, j) => ({ collectionId, source, text, embedding: embeddings[j] }))
+    );
   }
 };
 
-const uploadMultipleFile = async (filePaths) => {
-  try {
-    const fileIds = [];
-
-    for (const filePath of filePaths) {
-      const file = await openai.files.create({
-        purpose: "assistants",
-        file: fs.createReadStream(filePath),
-      });
-      await deleteFile(filePath);
-      fileIds.push(file.id);
-    }
-
-    return fileIds;
-  } catch (err) {
-    console.log("Error uploading files:", err);
-    return null;
+// Spreadsheets (csv/xls/xlsx) become CSV text; text files are read as-is; anything else is skipped.
+const indexFile = async (collectionId, source, buffer, filename) => {
+  if (/\.(csv|xlsx?)$/i.test(filename)) {
+    const workbook = xlsx.read(buffer, { type: "buffer" });
+    const text = workbook.SheetNames.map((name) =>
+      xlsx.utils.sheet_to_csv(workbook.Sheets[name])
+    ).join("\n\n");
+    return indexDocument(collectionId, source, text);
   }
-};
-
-const createVectorStore = async (name, fileId) => {
-  const vectorStore = await openai.vectorStores.create({
-    name,
-    file_ids: fileId,
-  });
-  return vectorStore.id;
-};
-
-const createAssistant = async (fileIds, instruction, name) => {
-  const assistant = await openai.beta.assistants.create({
-    name,
-    instructions: instruction,
-    tools: [{ type: "retrieval" }, { type: "code_interpreter" }],
-    model: process.env.GPT_MODEL,
-    file_ids: fileIds,
-  });
-  return assistant.id;
-};
-
-const createAssistantforMultipleFile = async (fileIds) => {
-  try {
-    const assistant = await openai.beta.assistants.create({
-      name: "Company Info Extractor",
-      instructions: ASSISTANT_INSTRUCTION,
-      tools: [{ type: "retrieval" }, { type: "code_interpreter" }],
-      model: process.env.GPT_MODEL,
-      file_ids: fileIds,
-    });
-
-    return assistant.id;
-  } catch (err) {
-    console.log("Error creating assistant:", err);
-    return null;
+  if (/\.(md|txt|json|html?)$/i.test(filename)) {
+    return indexDocument(collectionId, source, buffer.toString("utf8"));
   }
+  console.warn(`Skipping unsupported file type for knowledge base: ${filename}`);
 };
 
-const createAssistantV2 = async (
-  vectorStoreId,
-  name,
-  instruction = ASSISTANT_INSTRUCTION
-) => {
-  const assistant = await openai.beta.assistants.create({
-    name,
-    instructions: instruction,
-    model: process.env.GPT_MODEL,
-    tools: [{ type: "file_search" }],
-    tool_resources: {
-      file_search: {
-        vector_store_ids: [vectorStoreId],
-      },
-    },
-  });
-  return assistant.id;
+const deleteDocument = (source) => KnowledgeChunk.deleteMany({ source });
+
+// ponytail: brute-force scan of the collection in memory, fine for a few thousand chunks; use Atlas Vector Search beyond that
+const retrieve = async (collectionId, query, k = 4) => {
+  const [queryEmbedding] = await embed([query]);
+  const chunks = await KnowledgeChunk.find({ collectionId }, "text embedding").lean();
+  // OpenAI embeddings are unit length, so the dot product is the cosine similarity
+  const score = (embedding) =>
+    embedding.reduce((sum, value, i) => sum + value * queryEmbedding[i], 0);
+  return chunks
+    .map((chunk) => ({ text: chunk.text, score: score(chunk.embedding) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k)
+    .map((chunk) => chunk.text);
 };
 
-const modifyAssistant = async (assistantId, model) => {
-  try {
-    const assistant = await openai.beta.assistants.update(assistantId, {
-      model: model,
-    });
-
-    return assistant.id;
-  } catch (err) {
-    console.log("Error modifying assistant:", err);
-    return null;
-  }
-};
-
-const getAssistant = async (assistantId) => {
-  try {
-    const assistant = await openai.beta.assistants.retrieve(assistantId);
-    return assistant;
-  } catch (err) {
-    console.log("Error getting assistant:", err);
-    return null;
-  }
-};
-
-const createEmptyThread = async () => {
-  const emptyThread = await openai.beta.threads.create();
-  return emptyThread.id;
-};
-const deleteAThread = async (threadId) => {
-  await openai.beta.threads.delete(threadId);
-};
-const createMessage = async (threadId, message, fileId = null) => {
-  let threadMessage;
-  if (!fileId) {
-    threadMessage = await openai.beta.threads.messages.create(threadId, {
-      role: "user",
-      content: message,
-    });
-  } else {
-    threadMessage = await openai.beta.threads.messages.create(threadId, {
-      role: "user",
-      content: message,
-      file_ids: [fileId],
-    });
-  }
-  return threadMessage;
-};
-
-const createRun = async (assistantId, threadId, instruction) => {
-  const run = await openai.beta.threads.runs.create(threadId, {
-    assistant_id: assistantId,
-  });
-  return run;
-};
-
-const getRunStatus = async (threadId, runId) => {
-  const status = await openai.beta.threads.runs.retrieve(runId, {
-    thread_id: threadId,
-  });
-  return status;
-};
-
-const cancelRun = async (threadId, runId) => {
-  const status = await openai.beta.threads.runs.cancel(runId, {
-    thread_id: threadId,
-  });
-  return status;
-};
-
-const getMessage = async (threadId) => {
-  const message = await openai.beta.threads.messages.list(threadId);
-  return message.data[0].content[0].text.value;
-};
-
-const retrieveMessage = async (threadId, messageId) => {
-  const message = await openai.beta.threads.messages.retrieve(messageId, {
-    thread_id: threadId,
-  });
-  return message.content[0].text.value;
-};
-
-const toolOutputsToRun = async (threadId, runId, toolId) => {
-  const run = await openai.beta.threads.runs.submitToolOutputs(runId, {
-    thread_id: threadId,
-    tool_outputs: [
-      {
-        tool_call_id: toolId,
-        output: "Success",
-      },
-    ],
-  });
-};
-
-const modifyRun = async (threadId, runId) => {
-  const run = await openai.beta.threads.runs.update(runId, {
-    thread_id: threadId,
-  });
-  return run;
-};
-
-const runSinglePrompt = async (assistantId, threadId, promptSection) => {
-  const { prompt, json_format, updateFunction } = promptSection;
-  const finalPrompt = `${prompt}\n Do not include any explanations, only provide a RFC8259 compliant JSON response following this format without deviation.:\n ${json_format}\n The JSON response:`;
-  const message = await createMessage(threadId, finalPrompt);
-  let run = await createRun(assistantId, threadId);
-  let finalJsonOutput = {};
-
-  const JsonResponsePromise = new Promise(async (resolve, reject) => {
-    while (true) {
-      const status = await getRunStatus(threadId, run.id);
-      if (status.status === "completed") {
-        const outputMsg = await getMessage(threadId);
-        // const outputMsg = await retrieveMessage(threadId, message.id);
-        console.log("Raw output---->", outputMsg);
-        const jsonOutput = naiveJSONFromText(outputMsg);
-        finalJsonOutput = jsonOutput;
-        resolve();
-        break;
-      } else if (status.status === "failed") {
-        console.log("AI failed");
-        resolve();
-        break;
-      } else {
-        console.log("AI working!!!");
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  });
-
-  await JsonResponsePromise;
-  return finalJsonOutput;
-};
-
-const naiveJSONFromText = (text) => {
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-
-  try {
-    const jsonRepair = jsonrepair(match[0]);
-    return JSON.parse(jsonRepair);
-  } catch {
-    return null;
-  }
-};
-
-const runProspect = async (fileIds, prompt, instruction, name) => {
-  try {
-    const assistantId = await createAssistant(fileIds, instruction, name);
-    const threadId = await createEmptyThread();
-
-    await createMessage(threadId, prompt);
-    const run = await createRun(assistantId, threadId);
-    let finalJsonOutput = {};
-
-    const JsonResponsePromise = new Promise(async (resolve, reject) => {
-      while (true) {
-        const status = await getRunStatus(threadId, run.id);
-        if (status.status === "completed") {
-          const outputMsg = await getMessage(threadId);
-          console.log("Raw output---->", outputMsg);
-          // const jsonOutput = naiveJSONFromText(outputMsg);
-          // finalJsonOutput = jsonOutput;
-          finalJsonOutput = outputMsg;
-          resolve();
-          break;
-        } else if (status.status === "failed") {
-          console.log("AI failed");
-          resolve();
-          break;
-        } else {
-          console.log("AI working!!!");
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    });
-    await JsonResponsePromise;
-    return finalJsonOutput;
-  } catch (err) {
-    console.log("Error in runProspect-->", err);
-    return null;
-  }
-};
-
-const emailGeneratePrompt = async (assistantId, threadId, finalPrompt) => {
-  // const { prompt, json_format, updateFunction } = promptSection;
-  // const finalPrompt = `${prompt}\n Do not include any explanations, only provide a RFC8259 compliant JSON response following this format without deviation.:\n ${json_format}\n The JSON response:`;
-  await createMessage(threadId, finalPrompt);
-  const run = await createRun(assistantId, threadId);
-  let finalJsonOutput = {};
-
-  const JsonResponsePromise = new Promise(async (resolve, reject) => {
-    while (true) {
-      const status = await getRunStatus(threadId, run.id);
-      if (status.status === "completed") {
-        const outputMsg = await getMessage(threadId);
-        console.log("Raw output---->", outputMsg);
-        const jsonOutput = naiveJSONFromText(outputMsg);
-        finalJsonOutput = jsonOutput;
-        resolve();
-        break;
-      } else if (status.status === "failed") {
-        console.log("AI failed");
-        resolve();
-        break;
-      } else {
-        console.log("AI working!!!");
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  });
-  await JsonResponsePromise;
-  return finalJsonOutput;
-};
-
-const newProspectGenerate = async (assistantId, threadId, finalPrompt) => {
-  // const { prompt, json_format, updateFunction } = promptSection;
-  // const finalPrompt = `${prompt}\n Do not include any explanations, only provide a RFC8259 compliant JSON response following this format without deviation.:\n ${json_format}\n The JSON response:`;
-  await createMessage(threadId, finalPrompt);
-  const run = await createRun(assistantId, threadId);
-  let finalJsonOutput = {};
-
-  const JsonResponsePromise = new Promise(async (resolve, reject) => {
-    while (true) {
-      const status = await getRunStatus(threadId, run.id);
-      if (status.status === "completed") {
-        const outputMsg = await getMessage(threadId);
-        // console.log("Raw output---->", outputMsg);
-        // const jsonOutput = naiveJSONFromText(outputMsg);
-        finalJsonOutput = outputMsg;
-        resolve();
-        break;
-      } else if (status.status === "failed") {
-        console.log("AI failed");
-        resolve();
-        break;
-      } else {
-        console.log("AI working!!!");
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  });
-  await JsonResponsePromise;
-  return finalJsonOutput;
-};
-
-const threadAndRunV2 = async (assistantId, finalPrompt, fileId) => {
-  const execute = async () => {
-    try {
-      console.log("AI Working !!!");
-
-      const run = await openai.beta.threads.createAndRunPoll({
-        assistant_id: assistantId,
-        thread: {
-          messages: [
-            {
-              role: "user",
-              content: finalPrompt,
-              attachments: [
-                {
-                  file_id: fileId,
-                  tools: [{ type: "file_search" }],
-                },
-              ],
-            },
-          ],
-        },
-      });
-
-      if (run.status === "completed") {
-        const message = await getMessage(run.thread_id);
-        const jsonOutput = naiveJSONFromText(message);
-        return jsonOutput;
-      }
-      return null;
-    } catch (err) {
-      console.log("Error in AI threadAndRunV2-->", err);
-      throw new Error("Error in threadAndRunV2", err); // Throw the error to trigger a retry
-    }
-  };
-
-  try {
-    const result = await backOff(execute, {
-      jitter: "full",
-      delayFirstAttempt: true,
-      numOfAttempts: 5, // Optional: number of retry attempts
-      startingDelay: 1000 * 3, // Optional: starting delay in milliseconds
-      maxDelay: 1000 * 60, // Optional: maximum delay between retries
-    });
-    return result;
-  } catch (err) {
-    console.log("All retries failed:", err);
-    return null; // Return null if all retries fail
-  }
-};
-
-const createThreadAndRun = async (assistantId, finalPrompt) => {
-  const execute = async () => {
-    try {
-      const run = await openai.beta.threads.createAndRunPoll({
-        assistant_id: assistantId,
-        thread: {
-          messages: [{ role: "user", content: finalPrompt }],
-        },
-      });
-
-      if (run.status === "completed") {
-        const message = await getMessage(run.thread_id);
-        const jsonOutput = naiveJSONFromText(message);
-        return jsonOutput;
-      } else {
-        throw new Error("Thread not completed");
-      }
-    } catch (err) {
-      console.log("Error in createThreadAndRun-->", err);
-      throw new Error("Error in createThreadAndRun", err);
-    }
-  };
-
-  try {
-    const result = await backOff(execute, {
-      jitter: "full",
-      delayFirstAttempt: true,
-      numOfAttempts: 5, // Optional: number of retry attempts
-      startingDelay: 100 * 3, // Optional: starting delay in milliseconds
-      maxDelay: 1000 * 60, // Optional: maximum delay between retries
-    });
-    return result;
-  } catch (err) {
-    console.log("All retries failed:", err);
-    throw err;
-  }
-};
-
-const createThreadAndRunonKnowledgeBase = async (companyId, finalPrompt) => {
-  console.log("Final Prompt ---- >", finalPrompt);
-  const execute = async () => {
-    try {
-      // await scrapeData(company.weburl, company.id);
-      const apiRes = await axios.post(`${KNOWLEDGE_BASE_API}/run-prompt`, {
-        userPrompt: finalPrompt,
-        company_id: companyId,
-      });
-
-      const data = apiRes.data.response;
-      console.log("data-->", data);
-      const jsonOutput = naiveJSONFromText(data);
-      console.log("jsonOutput-->", jsonOutput);
-
-      return jsonOutput;
-    } catch (err) {
-      console.log("Error in createThreadAndRunonKnowledgeBase-->", err);
-      throw new Error("Error in createThreadAndRunonKnowledgeBase", err);
-    }
-  };
-
-  try {
-    const result = await backOff(execute, {
-      jitter: "full",
-      delayFirstAttempt: true,
-      numOfAttempts: 5, // Optional: number of retry attempts
-      startingDelay: 100 * 3, // Optional: starting delay in milliseconds
-      maxDelay: 1000 * 60, // Optional: maximum delay between retries
-    });
-    return result;
-  } catch (err) {
-    console.log("All retries failed:", err);
-    throw err;
-  }
-};
-// Function to create an image with DALL-E
-const createImage = async (prompt) => {
-  try {
-    const response = await openai.images.generate({
-      model: "dall-e-3",
-      prompt: prompt,
-      n: 1,
-      size: "1024x1024",
-    });
-    const imageUrl = response.data[0].url;
-    return imageUrl;
-  } catch (error) {
-    console.error("Error creating image:", error);
-  }
+// RAG: answer from the collection's closest chunks.
+const createThreadAndRunonKnowledgeBase = async (collectionId, finalPrompt) => {
+  const chunks = await retrieve(String(collectionId), finalPrompt);
+  return generateJSON(finalPrompt, KB_INSTRUCTIONS + chunks.join("\n\n"));
 };
 
 module.exports = {
-  uploadFile,
-  createAssistant,
-  createEmptyThread,
-  createMessage,
-  createRun,
-  getRunStatus,
-  cancelRun,
-  getMessage,
-  toolOutputsToRun,
-  runSinglePrompt,
-  deleteAThread,
-  uploadMultipleFile,
-  createAssistantforMultipleFile,
-  runProspect,
-  emailGeneratePrompt,
-  newProspectGenerate,
-  modifyAssistant,
-  getAssistant,
-  createAssistantV2,
-  createVectorStore,
-  createThreadAndRun,
-  threadAndRunV2,
-  createImage,
+  generateText,
+  generateJSON,
+  indexDocument,
+  indexFile,
+  deleteDocument,
   createThreadAndRunonKnowledgeBase,
-  naiveJSONFromText,
 };

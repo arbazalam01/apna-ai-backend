@@ -23,13 +23,9 @@ const {
 } = require("../lib/function_calling");
 const { createObjectCsvWriter } = require("csv-writer");
 const {
-  isAssistantExist,
   dateFormatter,
-  isAssistantV2Exist,
 } = require("../utils/company_helper");
 const {
-  runSinglePrompt,
-  createThreadAndRun,
   createThreadAndRunonKnowledgeBase,
 } = require("../utils/openai_helper");
 const { saveFileContent, fetchFileFromS3 } = require("../utils/aws_helper");

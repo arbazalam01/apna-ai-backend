@@ -1,9 +1,7 @@
 const schedule = require("node-schedule");
 const Company = require("../models/Company");
 const { s3 } = require("./aws_helper");
-const { isAssistantExist, saveAIOutput } = require("./company_helper");
-const { getAllPrompts } = require("../lib/function_calling");
-const { runSinglePrompt } = require("./openai_helper");
+const { runAllPromptHelper, updateCompanyData } = require("./company_helper");
 
 let intervalId;
 
@@ -34,28 +32,8 @@ async function getScrapingStatus(companyId) {
 
 const runAllPromptFunction = async (companyId) => {
   try {
-    const companyData = await isAssistantExist(companyId);
-
-    const { assistantId, threadId } = companyData;
-    const allPrompts = getAllPrompts();
-
-    async function processAllPrompts() {
-      for (const section of allPrompts) {
-        const updatedPrompt = {
-          ...section,
-          prompt: section.prompt.replaceAll("$company_name", companyData.name),
-        };
-        const jsonData = await runSinglePrompt(
-          assistantId,
-          threadId,
-          updatedPrompt
-        );
-        await saveAIOutput(companyId, jsonData, section);
-        console.log("Done-->");
-        await new Promise((resolve) => setTimeout(resolve, 5 * 1000));
-      }
-    }
-    await processAllPrompts();
+    await updateCompanyData(companyId, { isScrapingDone: true });
+    await runAllPromptHelper(companyId);
   } catch (err) {
     console.log("err", err);
   }

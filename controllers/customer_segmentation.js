@@ -1,14 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const UserSegment = require("../models/UserSegmentation.js");
-const FormData = require("form-data");
 const fs = require("fs");
-const axios = require("axios");
 const Company = require("../models/Company");
 const {
   createThreadAndRunonKnowledgeBase,
+  indexFile,
 } = require("../utils/openai_helper.js");
-const KNOWLEDGE_BASE_API = process.env.KNOWLEDGE_BASE_API;
 
 // GET all segments by companyId
 
@@ -39,32 +37,13 @@ const createUserSegment = async (req, res) => {
       return res.status(400).json({ message: "Excel file is required." });
     }
 
-    const fileBuffer = req.file.buffer;
-
-    // Prepare form data with the Excel file
-    const formData = new FormData();
     const uniqueFileName = companyId + "-users";
-    formData.append(
-      "file",
-      fileBuffer, // Attach the file directly
+    await indexFile(
+      uniqueFileName,
+      req.file.originalname,
+      req.file.buffer,
       req.file.originalname
     );
-    formData.append("company_id", uniqueFileName.toString());
-
-    // Upload Excel to the knowledge base API
-    const uploadResponse = await axios.post(
-      `${KNOWLEDGE_BASE_API}/create-embeddings`,
-      formData,
-      { headers: formData.getHeaders() }
-    );
-
-    console.log("uploadResponse-->", uploadResponse);
-
-    if (uploadResponse.status !== 200) {
-      return res
-        .status(500)
-        .json({ message: "Failed to upload to the knowledge base." });
-    }
 
     const companyName = await Company.findById(companyId);
 

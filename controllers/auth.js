@@ -1,7 +1,7 @@
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const { expressjwt } = require("express-jwt");
-const nodemailer = require("nodemailer");
+const transporter = require("../utils/mailer");
 const { validationResult } = require("express-validator");
 const crypto = require("crypto");
 
@@ -285,14 +285,6 @@ const confirmResetPassword = async (req, res) => {
 
 // Function to send reset email (replace with actual email sending logic)
 function sendResetEmail(email, token) {
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
-  });
-
   const resetLink = `${process.env.CLIENT_URL}/resetpassword?token=${token}`;
 
   const mailOptions = {
@@ -327,14 +319,6 @@ function sendResetEmail(email, token) {
 
 
 const sendOtpEmail = async (email, otp) => {
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
-  });
-
   const mailOptions = {
     from: process.env.GMAIL_USER,
     to: email,

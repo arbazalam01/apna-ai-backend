@@ -2,25 +2,23 @@ const Company = require("../models/Company");
 const Relation = require("../models/Relation");
 const User = require("../models/User");
 const Prompt = require("../models/Prompt");
-const { OpenAI } = require("openai");
 const { Upload } = require("@aws-sdk/lib-storage");
 const fs = require("fs");
 const Sections = require("../utils/prompt");
 const SectionsWithoutAssistance = require("../utils/promptwithoutassist");
 const checkConfig = require("../utils/config");
-const Function_Info = require("../utils/functions_info");
 const axios = require("axios");
-const FormData = require("form-data");
 const { parseCSV, parseExcel } = require("../utils/csv_parser");
 const {
-  uploadFile,
-  runProspect,
-  emailGeneratePrompt,
+  generateText,
+  generateJSON,
+  createThreadAndRunonKnowledgeBase,
+  indexFile,
+  deleteDocument,
 } = require("../utils/openai_helper");
 const {
   addCompany,
   addRelation,
-  isAssistantExist,
   isReportDone,
   runAllPromptHelper,
   runASinglePrompt,
@@ -30,47 +28,6 @@ const { getAllPrompts } = require("../lib/function_calling");
 const { startPolling } = require("../utils/polling_service");
 const Prospect = require("../models/Prospect");
 const { fetchFileFromS3, s3 } = require("../utils/aws_helper");
-
-const openaiapi = process.env.OPEN_API_KEY;
-const GPT_MODEL = process.env.GPT_MODEL;
-const KNOWLEDGE_BASE_API = process.env.KNOWLEDGE_BASE_API;
-
-const deleteAssistant = async (assistantId) => {
-  const response = await fetch(
-    `https://api.openai.com/v1/assistants/${assistantId}`,
-    {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${openaiapi}`,
-        "Content-Type": "application/json",
-        "OpenAI-Beta": "assistants=v1", // Additional header for the beta feature
-      },
-    }
-  );
-
-  if (response.ok) {
-    console.log("Assistant deleted successfully");
-  } else {
-    console.error("Error deleting assistant:", await response.text());
-  }
-};
-
-const deleteFile = async (fileId) => {
-  const response = await fetch(`https://api.openai.com/v1/files/${fileId}`, {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${openaiapi}`,
-      "Content-Type": "application/json",
-      "OpenAI-Beta": "assistants=v1", // Additional header for the beta feature
-    },
-  });
-
-  if (response.ok) {
-    console.log("File deleted successfully");
-  } else {
-    console.error("Error deleting file:", await response.text());
-  }
-};
 
 const addCustomer = async (req, res) => {
   try {
@@ -130,21 +87,17 @@ const addAssets = async (req, res) => {
           Key: file.key,
         });
 
-        const formData = new FormData();
-        formData.append(
-          "file",
+        await indexFile(
+          companyId,
+          file.key,
           Buffer.from(await data.Body.transformToByteArray()),
           file.originalname
-        ); // Use Buffer and filename
-        formData.append("company_id", companyId);
-
-        // Upload to the external API
-        await axios.post(`${KNOWLEDGE_BASE_API}/upload`, formData);
+        );
 
         return file.location; // Return the S3 location
       } catch (err) {
         console.error("Error processing file:", err);
-        throw new Error("Error uploading file to external API");
+        throw new Error("Error adding file to the knowledge base");
       }
     });
 
@@ -160,8 +113,7 @@ const addAssets = async (req, res) => {
 const deleteAsset = async (req, res) => {
   try {
     const { fileId } = req.params;
-    // Upload to the external API
-    await axios.delete(`${KNOWLEDGE_BASE_API}/delete/${fileId}`);
+    await deleteDocument(fileId);
 
     res.status(200).json({ message: "Asset deleted successfully" });
   } catch (err) {
@@ -264,13 +216,6 @@ const updateCompetitors = async (req, res) => {
     const sectionInfo = SectionsWithoutAssistance.find(
       (info) => info.section === "userpersona"
     );
-    const formatInfo = Function_Info.find(
-      (info) => info.section === "userpersona"
-    );
-    const openai = new OpenAI({
-      apiKey: openaiapi,
-    });
-
     const updatePromises = userpersona.map(async (item) => {
       let prompt = sectionInfo.Prompt.replace("$name", item.userinfo.name)
         .replace("$age", item.userinfo.age)
@@ -280,24 +225,9 @@ const updateCompetitors = async (req, res) => {
         .replace("$location", item.userinfo.location);
 
       try {
-        const response = await openai.chat.completions.create({
-          model: GPT_MODEL,
-          messages: [{ role: "user", content: prompt }],
-          functions: [
-            {
-              name: "format_json",
-              description: "Convert text into json",
-              parameters: formatInfo.parameters,
-            },
-          ],
-          function_call: "auto",
-        });
-
-        let val = JSON.parse(
-          response.choices[0].message.function_call.arguments
+        item.gptoutput = await generateJSON(
+          `${prompt}\nDo not include any explanations, only provide JSON response following this format without deviation.:\n ${sectionInfo.json_format}\n The JSON response:`
         );
-
-        item.gptoutput = val;
       } catch (error) {
         console.error("Error:", error);
         res.status(500).json({ error: "Failed to process the request." });
@@ -391,11 +321,6 @@ const addCompanyData = async (req, res) => {
       const sectionInfo = SectionsWithoutAssistance.find(
         (info) => info.section === type
       );
-      const formatInfo = Function_Info.find((info) => info.section === type);
-      const openai = new OpenAI({
-        apiKey: openaiapi,
-      });
-
       const updatePromises = data.map(async (item) => {
         let prompt = sectionInfo.Prompt.replace("$name", item.userinfo.name)
           .replace("$age", item.userinfo.age)
@@ -405,24 +330,9 @@ const addCompanyData = async (req, res) => {
           .replace("$location", item.userinfo.location);
 
         try {
-          const response = await openai.chat.completions.create({
-            model: GPT_MODEL,
-            messages: [{ role: "user", content: prompt }],
-            functions: [
-              {
-                name: "format_json",
-                description: "Convert text into json",
-                parameters: formatInfo.parameters,
-              },
-            ],
-            function_call: "auto",
-          });
-
-          let val = JSON.parse(
-            response.choices[0].message.function_call.arguments
+          item.gptoutput = await generateJSON(
+            `${prompt}\nDo not include any explanations, only provide JSON response following this format without deviation.:\n ${sectionInfo.json_format}\n The JSON response:`
           );
-
-          item.gptoutput = val;
         } catch (error) {
           console.error("Error:", error);
           res.status(500).json({ error: "Failed to process the request." });
@@ -457,59 +367,6 @@ const scrapCompanyData = async (req, res) => {
     res.json({ message: err.message });
   }
 };
-
-async function generateJSONFromtext(prompt, type, companyId) {
-  const openai = new OpenAI({
-    apiKey: openaiapi,
-  });
-
-  const sectionInfo = Function_Info.find((info) => info.section === type);
-
-  const chatCompletion = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo-1106",
-    messages: [{ role: "user", content: prompt }],
-    functions: [
-      {
-        name: "format_json",
-        description: "Convert text into json",
-        parameters: sectionInfo.parameters,
-      },
-    ],
-    function_call: "auto",
-  });
-
-  try {
-    if (chatCompletion.choices[0].message?.function_call?.arguments) {
-      if (type == "toptrends") {
-        if (
-          JSON.parse(
-            chatCompletion.choices[0].message?.function_call?.arguments
-          ).type?.length != 0
-        ) {
-          let val = JSON.parse(
-            chatCompletion.choices[0].message.function_call.arguments
-          );
-          let id = companyId.toString();
-          console.log("data", val);
-          console.log("id", id);
-          await Relation.findOneAndUpdate(
-            { companyId: id },
-            { $set: { [type]: val.toptrends } }
-          );
-        }
-      } else {
-        await Company.findByIdAndUpdate(companyId, {
-          [type]: JSON.parse(
-            chatCompletion.choices[0].message.function_call.arguments
-          ),
-        });
-      }
-    }
-  } catch (err) {
-    console.log("error", err);
-    return;
-  }
-}
 
 const runAllPrompt = async (req, res) => {
   try {
@@ -642,30 +499,6 @@ const getPrompt = async (req, res) => {
   }
 };
 
-async function processCompanyIds(CompanyIds) {
-  for (const company of CompanyIds) {
-    try {
-      // await scrapeData(company.weburl, company.id);
-      const data = await axios.get(
-        `${process.env.FAST_API}/scrape?companyId=${company.id}&url=${company.weburl}`
-      );
-    } catch (err) {
-      console.log(err);
-    }
-
-    await Company.findByIdAndUpdate(
-      company.id,
-      { $set: { dateofScrape: new Date() } },
-      {
-        upsert: true, // Create the document if it doesn't exist
-        setDefaultsOnInsert: true, // Set default values for fields if creating a new document
-      }
-    );
-
-    // await scrapeWebsite(company.weburl, company.id);
-  }
-}
-
 const runAPrompt = async (req, res) => {
   try {
     const { companyId, type } = req.body;
@@ -678,44 +511,11 @@ const runAPrompt = async (req, res) => {
       Prompt = allPrompts.find((item) => item.dbKey == type).prompt;
     }
 
-    await runASinglePrompt(companyId, type, assistantId, Prompt);
+    await runASinglePrompt(companyId, type, Prompt);
     res.json({ message: "Success" });
   } catch (err) {
     console.log(err);
     res.json({ message: err.message });
-  }
-};
-
-const scrapper = async (companyId) => {
-  try {
-    const allCompanies = await Relation.find({ companyId })
-      .populate("companyId", "websiteUrl")
-      .populate("competitorsId", "websiteUrl")
-      .populate("industryLeaderId", "websiteUrl");
-
-    let CompanyIds = [];
-
-    CompanyIds.push({
-      id: allCompanies[0].companyId._id,
-      weburl: allCompanies[0].companyId.websiteUrl,
-    });
-    allCompanies[0].competitorsId.forEach((val) => {
-      if (val.websiteUrl.length != 0) {
-        CompanyIds.push({ id: val._id, weburl: val.websiteUrl });
-      }
-    });
-
-    if (allCompanies[0].industryLeaderId) {
-      if (allCompanies[0].industryLeaderId.websiteUrl.length != 0) {
-        CompanyIds.push({
-          id: allCompanies[0].industryLeaderId._id,
-          weburl: allCompanies[0].industryLeaderId.websiteUrl,
-        });
-      }
-    }
-    processCompanyIds(CompanyIds);
-  } catch (err) {
-    throw err;
   }
 };
 
@@ -805,7 +605,7 @@ const uploadProspect = async (req, res) => {
             const relationData = await newRelation.save();
             const isScrapingFile = await getScrapingStatus(companyId);
             if (!isScrapingFile) {
-              scrapper(companyId).then(() => {
+              scrapeAllCompanies(companyId).then(() => {
                 concurrentCount--;
               });
               concurrentCount++;
@@ -847,26 +647,14 @@ const getDymanicPromptResponse = async (req, res) => {
       gptprompt = gptprompt.replace(regex, replacementContent); // Replace with replacementContent
     }
 
-    const openai = new OpenAI({
-      apiKey: openaiapi,
-    });
-
-    openai.chat.completions
-      .create({
-        // model: "gpt-3.5-turbo-1106",
-        model: GPT_MODEL,
-
-        messages: [{ role: "user", content: gptprompt }],
-      })
-      .then((response) => {
-        const output = response.choices[0].message;
-        // Here you can replace placeholders in the output if needed
-        res.json({ output });
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-        res.status(500).json({ error: "Failed to process the request." });
-      });
+    try {
+      const content = await generateText(gptprompt);
+      // same shape as the old chat message so the frontend keeps reading output.content
+      res.json({ output: { role: "assistant", content } });
+    } catch (error) {
+      console.error("Error:", error);
+      res.status(500).json({ error: "Failed to process the request." });
+    }
   } catch (err) {
     res.json({ message: err.message });
   }
@@ -876,24 +664,14 @@ const getCompanyCompetitors = async (req, res) => {
   try {
     const { gptprompt, companyName, companyUrl } = req.body;
 
-    const openai = new OpenAI({
-      apiKey: openaiapi,
-    });
-
     let prompt = gptprompt.replace("$company_name", companyName);
     prompt = prompt.replace("$company_website", companyUrl);
-    openai.chat.completions
-      .create({
-        model: GPT_MODEL,
-        messages: [{ role: "user", content: prompt }],
-      })
-      .then((response) => {
-        res.json({ data: response.choices[0].message.content });
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-        res.status(500).json({ error: "Failed to process the request." });
-      });
+    try {
+      res.json({ data: await generateText(prompt) });
+    } catch (error) {
+      console.error("Error:", error);
+      res.status(500).json({ error: "Failed to process the request." });
+    }
   } catch (err) {
     res.json({ message: err.message });
   }
@@ -1010,7 +788,7 @@ const generatePersona = async (req, res) => {
     );
     // const { assistantId, threadId } = await isAssistantExist(companyId);
     const prospectJsonFile = await fetchFileFromS3(filePath);
-    const openAiFileId = await uploadFile(prospectJsonFile);
+    const prospectJson = fs.readFileSync(prospectJsonFile, "utf8");
     const allPrompts = getAllPrompts();
 
     const prospectPrompt = allPrompts.find((item) => item.dbKey == "prospect");
@@ -1020,8 +798,8 @@ const generatePersona = async (req, res) => {
       prospectJsonData.name
     );
     const json_format = prospectPrompt.json_format;
-    const finalPrompt = `${prompt}\n Do not include any explanations, only provide a RFC8259 compliant JSON response following this format without deviation.:\n ${json_format}\n The JSON response:`;
-    const gptRes = await runProspect(openAiFileId, finalPrompt);
+    const finalPrompt = `${prompt}\nBelow is the prospect data\n${prospectJson}\nDo not include any explanations, only provide a RFC8259 compliant JSON response following this format without deviation.:\n ${json_format}\n The JSON response:`;
+    const gptRes = await generateJSON(finalPrompt);
 
     await Prospect.findByIdAndUpdate(
       userId,
@@ -1049,7 +827,6 @@ const generateEmail = async (req, res) => {
     const { userId, companyId } = req.body;
     const userData = await Prospect.findOne({ _id: userId });
     const companyData = await Company.findOne({ _id: companyId });
-    const { assistantId, threadId } = await isAssistantExist(companyId);
 
     const personaFile = await fetchFileFromS3(
       `Users/${userId}/persona.md`,
@@ -1081,9 +858,8 @@ const generateEmail = async (req, res) => {
     // } are ${JSON.stringify(companyData.products)}`;
 
     const finalPrompt = `${prompt}\nBelow is the user persona data\n${fileStream}.\nDo not include any explanations, only provide a RFC8259 compliant JSON response following this format without deviation.:\n ${json_format}\n The JSON response:`;
-    const gptRes = await emailGeneratePrompt(
-      assistantId,
-      threadId,
+    const gptRes = await createThreadAndRunonKnowledgeBase(
+      companyId,
       finalPrompt
     );
 
@@ -1231,7 +1007,6 @@ module.exports = {
   getCompanyCompetitors,
   getTopTrends,
   runAllPrompt,
-  deleteAssistant,
   updateCompetitors,
   getScrapingStatus,
   doesPathExist,

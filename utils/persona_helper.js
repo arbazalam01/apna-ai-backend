@@ -1,6 +1,5 @@
 const schedule = require("node-schedule");
 const Persona = require("../models/Persona");
-const { isAssistantExist, isAssistantV2Exist } = require("./company_helper");
 const { defaultPersonas,promptforAvatar,MultiplePersonas } = require("../lib/function_calling");
 const { createThreadAndRun,createImage, createThreadAndRunonKnowledgeBase } = require("./openai_helper");
 const {downloadCompanyLogo} = require ("../utils/company_helper");

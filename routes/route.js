@@ -1,11 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
-const { OpenAI } = require("openai");
+const { generateText } = require("../utils/openai_helper");
 const cheerio = require("cheerio");
 const { s3 } = require("../utils/aws_helper");
 
-const openaiapi = process.env.OPEN_API_KEY;
 
 router.get("/", (req, res) => {
   res.send("<h1>Working fine!!!</h1>");
@@ -541,16 +540,8 @@ router.post("/gptoutput", async (req, res) => {
             }
           });
 
-        const openai = new OpenAI({ apiKey: openaiapi });
-        const completion = await openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
-          messages: [
-            { role: "user", content: `${prompt} based on ${scrapped_data}` },
-          ],
-        });
-
         res.json({
-          message: completion.choices[0]?.message?.content,
+          message: await generateText(`${prompt} based on ${scrapped_data}`),
         });
       })
       .catch(function (err) {

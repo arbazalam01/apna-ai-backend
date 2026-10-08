@@ -6,6 +6,9 @@ const { promisify } = require("util");
 
 const s3 = new S3({
   region: process.env.REGION,
+  // S3_ENDPOINT points at an S3-compatible store (e.g. MinIO locally); unset = AWS
+  endpoint: process.env.S3_ENDPOINT || undefined,
+  forcePathStyle: !!process.env.S3_ENDPOINT,
   credentials: {
     accessKeyId: process.env.ACCESSKEY,
     secretAccessKey: process.env.SECRETKEY,
