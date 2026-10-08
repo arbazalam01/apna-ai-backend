@@ -17,16 +17,16 @@ You give it a company's website and its competitors; it scrapes them, builds a k
 
 | Area | Technology |
 |------|------------|
-| Runtime / server | Node.js, Express |
-| Database | MongoDB with Mongoose |
-| AI | OpenAI API (GPT-4 Turbo, GPT-3.5 Turbo, Assistants API, DALL·E 3), Zod + `zod-to-json-schema` for function calling, `jsonrepair` |
-| File storage | AWS S3 (`aws-sdk`, `multer`, `multer-s3`) |
-| Web scraping | Firecrawl, Cheerio, `request-promise`, Axios |
-| Auth | JWT (`jsonwebtoken`, `express-jwt`), Passport, bcryptjs |
+| Runtime / server | Node.js 24 LTS, Express 5 |
+| Database | MongoDB with Mongoose 9 |
+| AI | OpenAI API (GPT-4 Turbo, GPT-3.5 Turbo, Assistants API, DALL·E 3), `jsonrepair` |
+| File storage | AWS S3 (AWS SDK v3 `@aws-sdk/client-s3`, `multer`, `multer-s3`) |
+| Web scraping | Firecrawl SDK (`firecrawl`), Cheerio, Axios |
+| Auth | JWT (`jsonwebtoken`, `express-jwt`) |
 | Files | `csv-parser`, `csvtojson`, `csv-writer`, `xlsx` |
 | Integrations | Google Sheets API (`googleapis`), HubSpot, Nodemailer (Gmail) |
-| Jobs | `node-schedule`, `node-cron`, `exponential-backoff` |
-| Dev | nodemon, dotenv |
+| Jobs | `node-schedule`, `exponential-backoff` |
+| Dev | `node --watch`, `node --env-file` (no extra tooling) |
 
 ## Project structure
 
@@ -50,7 +50,7 @@ Without these, the server starts but the core features fail. It **runs fine loca
 
 ## Run locally
 
-**Prerequisites:** Node.js 18+, a MongoDB instance (local or Atlas), an OpenAI API key, and an AWS S3 bucket.
+**Prerequisites:** Node.js 24 LTS (see `.nvmrc`), a MongoDB instance (local or Atlas), an OpenAI API key, and an AWS S3 bucket.
 
 ```bash
 git clone https://github.com/arbazalam01/apna-ai-backend.git
@@ -58,40 +58,10 @@ cd apna-ai-backend
 npm install
 ```
 
-Create a `.env` file in the project root:
+Create your `.env` from the example and fill in your keys (see comments in `.env.example`):
 
-```env
-PORT=3000
-MONGO_DB=mongodb://localhost:27017/apna-ai
-SECRET=any-long-random-string            # JWT secret
-CLIENT_URL=http://localhost:5173         # frontend URL
-
-# OpenAI
-OPEN_API_KEY=sk-...
-GPT_MODEL=gpt-4-turbo-preview
-OPENAI_ASSISTANT_ID=
-ASSISTANT_INSTRUCTION=
-ASSISTANT_INSTRUCTION_V2=
-
-# AWS S3
-ACCESSKEY=
-SECRETKEY=
-REGION=ap-south-1
-BUCKETNAME=
-
-# Scraping / knowledge base (optional, needed for scraping features)
-FIRECRAWL_API_KEY=
-FIRECRAWL_API_ENDPOINT=
-FIRECRAWL_DEPLOYED_API_ENDPOINT=
-FAST_API=
-KNOWLEDGE_BASE_API=
-
-# Optional integrations
-HUBSPOT_API_ENDPOINT=
-HUBPOT_API_KEY=
-SPREADSHEET_ID=
-DATAINSIGHT_SPREADSHEET_ID=
-DEFAULT_COMPANY_ID=
+```bash
+cp .env.example .env
 ```
 
 Google Sheets features also need a service account `credentials.json` in the project root.

@@ -2,7 +2,6 @@
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
-const bodyParser = require("body-parser");
 const appRouter = require("./routes/route.js");
 const customerRouter = require("./routes/customer.js");
 const authRoutes = require("./routes/auth.js");
@@ -23,16 +22,18 @@ const corsOptions = {
 };
 
 // Setting up middleware
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
+// Express 5 leaves req.body undefined when there is no body; keep Express 4's {}
+app.use((req, res, next) => {
+  req.body ??= {};
+  next();
+});
 app.use(cookieParser());
 app.use(cors(corsOptions));
 
 // connect to mongo db
-mongoose.connect(process.env.MONGO_DB, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
+mongoose.connect(process.env.MONGO_DB);
 const db = mongoose.connection;
 db.on("error", console.error.bind(console, "MongoDB connection error:"));
 db.once("open", () => console.log("Connected to MongoDB"));

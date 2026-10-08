@@ -2,8 +2,8 @@ const Company = require("../models/Company");
 const Relation = require("../models/Relation");
 const User = require("../models/User");
 const Prompt = require("../models/Prompt");
-const { OpenAI, Configuration } = require("openai");
-const AWS = require("aws-sdk");
+const { OpenAI } = require("openai");
+const { Upload } = require("@aws-sdk/lib-storage");
 const fs = require("fs");
 const Sections = require("../utils/prompt");
 const SectionsWithoutAssistance = require("../utils/promptwithoutassist");
@@ -29,20 +29,11 @@ const { scrapeAllCompanies } = require("../utils/scraper_helper");
 const { getAllPrompts } = require("../lib/function_calling");
 const { startPolling } = require("../utils/polling_service");
 const Prospect = require("../models/Prospect");
-const { fetchFileFromS3 } = require("../utils/aws_helper");
+const { fetchFileFromS3, s3 } = require("../utils/aws_helper");
 
 const openaiapi = process.env.OPEN_API_KEY;
 const GPT_MODEL = process.env.GPT_MODEL;
 const KNOWLEDGE_BASE_API = process.env.KNOWLEDGE_BASE_API;
-
-// Configure AWS SDK with your credentials and region
-AWS.config.update({
-  accessKeyId: process.env.ACCESSKEY,
-  secretAccessKey: process.env.SECRETKEY,
-  region: process.env.REGION,
-});
-
-const s3 = new AWS.S3();
 
 const deleteAssistant = async (assistantId) => {
   const response = await fetch(
@@ -134,16 +125,17 @@ const addAssets = async (req, res) => {
 
     const uploadPromises = req.files.map(async (file) => {
       try {
-        // Convert s3.getObject to a promise
-        const data = await s3
-          .getObject({
-            Bucket: process.env.BUCKETNAME,
-            Key: file.key,
-          })
-          .promise();
+        const data = await s3.getObject({
+          Bucket: process.env.BUCKETNAME,
+          Key: file.key,
+        });
 
         const formData = new FormData();
-        formData.append("file", data.Body, file.originalname); // Use Buffer and filename
+        formData.append(
+          "file",
+          Buffer.from(await data.Body.transformToByteArray()),
+          file.originalname
+        ); // Use Buffer and filename
         formData.append("company_id", companyId);
 
         // Upload to the external API
@@ -837,27 +829,23 @@ const getDatafromS3 = async (section, companyId) => {
     Key: `promptoutput/${companyId}/${section}.txt`,
   };
 
-  // Call the getObject method to retrieve the content of the file
-  s3.getObject(params, (err, data) => {
-    if (err) {
-      console.error(`Error fetching file from S3: ${err}`);
-    } else {
-      // Data is returned as a Buffer, so convert it to a string
-      const fileContent = data.Body.toString("utf-8");
-      return fileContent;
-    }
-  });
+  try {
+    const data = await s3.getObject(params);
+    return await data.Body.transformToString("utf-8");
+  } catch (err) {
+    console.error(`Error fetching file from S3: ${err}`);
+  }
 };
 
 const getDymanicPromptResponse = async (req, res) => {
   try {
-    const { gptprompt, inputs } = req.body;
+    let { gptprompt, inputs } = req.body;
 
-    inputs.forEach((val) => {
-      const regex = new RegExp(`$${val}`, "g"); // Create a RegExp for each value
-      let replacementContent = getDatafromS3(val, req.params.companyId);
+    for (const val of inputs) {
+      const regex = new RegExp(`\\$${val}`, "g"); // Create a RegExp for each value
+      let replacementContent = await getDatafromS3(val, req.params.companyId);
       gptprompt = gptprompt.replace(regex, replacementContent); // Replace with replacementContent
-    });
+    }
 
     const openai = new OpenAI({
       apiKey: openaiapi,
@@ -929,12 +917,13 @@ const getTopTrends = async (req, res) => {
 async function doesPathExist(bucketName, path) {
   try {
     // List the objects in the specified path
-    const response = await s3
-      .listObjectsV2({ Bucket: bucketName, Prefix: path })
-      .promise();
+    const response = await s3.listObjectsV2({
+      Bucket: bucketName,
+      Prefix: path,
+    });
 
     // Check if there are any objects in the response
-    return response.Contents.length > 0;
+    return response.KeyCount > 0;
   } catch (error) {
     console.error("Error checking path existence:", error);
     return false;
@@ -1045,7 +1034,7 @@ const generatePersona = async (req, res) => {
         TonOfVoice: gptRes.TonOfVoice,
         PainPoints: gptRes.PainPoints,
       },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     return res.json({ message: "Succes" });
@@ -1183,7 +1172,7 @@ const uploadIcon = async (req, res) => {
   };
 
   try {
-    const data = await s3.upload(params).promise();
+    const data = await new Upload({ client: s3, params }).done();
 
     await Company.findByIdAndUpdate(companyId, {
       "about.companyLogo": data.Location ? data.Location : "",

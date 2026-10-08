@@ -1,26 +1,16 @@
 const axios = require("axios");
-const { saveFileContent, isScrapingCompleted } = require("./aws_helper");
+const { Firecrawl } = require("firecrawl");
+const { saveFileContent } = require("./aws_helper");
 const urlsToExclude = require("./urls_to_exclude");
 const urlsToInclude = require("./urls_to_include");
 const Relation = require("../models/Relation");
 const { backOff } = require("exponential-backoff");
-const AWS = require("aws-sdk");
 const FormData = require("form-data");
 
 const SCRAPER_API = process.env.FAST_API;
-const fireCrawlApiEndpoint = process.env.FIRECRAWL_API_ENDPOINT;
-const fireCrawlApiKey = process.env.FIRECRAWL_API_KEY;
 const KNOWLEDGE_BASE_API = process.env.KNOWLEDGE_BASE_API;
-const fireCrawlDeployedApiEndpoint =
-  process.env.FIRECRAWL_DEPLOYED_API_ENDPOINT;
-// Configure AWS SDK with your credentials and region
-AWS.config.update({
-  accessKeyId: process.env.ACCESSKEY,
-  secretAccessKey: process.env.SECRETKEY,
-  region: process.env.REGION,
-});
 
-const s3 = new AWS.S3();
+const firecrawl = new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY });
 
 // Define the grouping keywords as regex patterns
 const groups = {
@@ -64,27 +54,10 @@ const groups = {
 const scrapeHomepage = async (url) => {
   try {
     console.log(`Scraping homepage for ${url} !!!!`);
-    const reqBody = {
-      url,
+    return await firecrawl.scrape(url, {
       waitFor: 5000,
       excludeTags: ["link", "a", "img"],
-    };
-    const reqOptions = {
-      headers: {
-        Authorization: `Bearer ${process.env.FIRECRAWL_API_KEY}`,
-      },
-    };
-    const fireCrawlRes = await axios.post(
-      `${fireCrawlApiEndpoint}/scrape`,
-      reqBody,
-      reqOptions
-    );
-
-    const { data } = fireCrawlRes;
-
-    // console.log("Homepage data:", data);
-
-    return data.data;
+    });
   } catch (error) {
     console.error("Error in scraping workflow:", error);
   }
@@ -102,125 +75,32 @@ const startScraping = async (url, companyId) => {
   return response.data.job_id;
 };
 
-const startScrapingV2 = async (url, firecrawlType = "hosted") => {
-  const FIRECRAWL_API_ENDPOINT =
-    firecrawlType === "hosted"
-      ? fireCrawlApiEndpoint
-      : fireCrawlDeployedApiEndpoint;
-
-  const reqBody = {
-    url,
+// Crawls the site (plus its homepage) and uploads the grouped markdown to S3
+const crawlCompany = async (url, companyId) => {
+  const job = await firecrawl.crawl(url, {
     excludePaths: urlsToExclude,
     includePaths: urlsToInclude,
-    maxDepth: 3,
+    maxDiscoveryDepth: 3,
     limit: 100,
     scrapeOptions: {
       waitFor: 5000,
       excludeTags: ["link", "a", "img"],
     },
-  };
-
-  const reqOptions = {
-    headers: {
-      Authorization: `Bearer ${process.env.FIRECRAWL_API_KEY}`,
-    },
-  };
-
-  const response = await axios.post(
-    `${FIRECRAWL_API_ENDPOINT}/crawl`,
-    reqBody,
-    reqOptions
-  );
-  console.log("Firecrawl response", response.data.id);
-  return response.data.id;
-};
-
-const checkJobStatusV2 = async (
-  jobId,
-  companyId,
-  firecrawlType = "hosted",
-  type = null,
-  url = null
-) => {
-  const FIRECRAWL_API_ENDPOINT =
-    firecrawlType === "hosted"
-      ? fireCrawlApiEndpoint
-      : fireCrawlDeployedApiEndpoint;
-
-  const reqOptions = {
-    headers: {
-      Authorization: `Bearer ${process.env.FIRECRAWL_API_KEY}`,
-    },
-  };
-  let response = await axios.get(
-    `${FIRECRAWL_API_ENDPOINT}/crawl/${jobId}`,
-    reqOptions
-  );
-
-  if (url != null) {
-    const homePageData = await scrapeHomepage(url);
-    // console.log("Other data --->", response.data.data[0]);
-    response.data.data.push(homePageData);
-  }
-
-  if (response.data.status === "completed") {
-    if (type == "blogs") {
-      await uploadBlogScrapedData(response.data, companyId);
-    } else {
-      await uploadScrapedData(response.data, companyId);
-    }
-  }
-  return response.data.status;
-};
-
-const waitForScrapingCompletionV2 = async (jobId, companyId, url) => {
-  let status = "scraping";
-  while (status === "scraping") {
-    console.log(`Waiting for scraping to complete for ${companyId}...`);
-    await new Promise((resolve) => setTimeout(resolve, 5000)); // wait for 5 seconds
-    status = await checkJobStatusV2(jobId, companyId, "hosted", null, url);
-  }
-  if (status === "completed") {
-    // check if data is present or not
-    const scrapingDone = await isScrapingCompleted(companyId);
-    if (!scrapingDone) {
-      // re-run via deployed API
-      console.log("Re-running via deployed API... for", companyId);
-      const newJobId = await startScrapingV2(url, "deployed");
-
-      // check for status
-
-      let newStatus = "scraping";
-
-      while (newStatus === "scraping") {
-        console.log("Waiting for scraping to complete...");
-        await new Promise((resolve) => setTimeout(resolve, 1000)); // wait for 10 seconds
-        newStatus = await checkJobStatusV2(
-          newJobId,
-          companyId,
-          "deployed",
-          null,
-          url
-        );
-      }
-    }
-    console.log("Scraping completed successfully!", companyId);
-    const { runAllPromptHelper } = require("./company_helper");
-    await runAllPromptHelper(companyId);
-    return;
-  } else {
+  });
+  console.log(`Firecrawl crawl ${job.id}: ${job.status}`);
+  if (job.status !== "completed") {
     throw new Error("Scraping failed or job not found");
   }
+
+  const homePageData = await scrapeHomepage(url);
+  if (homePageData) job.data.push(homePageData);
+
+  await uploadScrapedData(job, companyId);
 };
 
-const waitForBlogScrapingCompletion = async (jobId, companyId) => {
-  let status = "scraping";
-  while (status === "scraping") {
-    console.log("Waiting for blog scraping to complete...");
-    await new Promise((resolve) => setTimeout(resolve, 5000)); // wait for 5 seconds
-    status = await checkJobStatusV2(jobId, companyId, "hosted", "blogs", null);
-  }
-  if (status === "completed") {
+const waitForBlogScrapingCompletion = async (job, companyId) => {
+  if (job.status === "completed") {
+    await uploadBlogScrapedData(job, companyId);
     const MAX_POLLING_TIME = 2 * 60 * 1000; // 4 minutes in milliseconds
     const POLLING_INTERVAL = 5000; // 5 seconds
     const pollingStartTime = Date.now();
@@ -258,10 +138,11 @@ const waitForBlogScrapingCompletion = async (jobId, companyId) => {
 const handleScrapingWorkflow = async (url, companyId) => {
   try {
     console.log(`Scraping Started  for ${url} !!!!`);
-    const jobId = await startScrapingV2(url);
-    console.log("Scraping job started with jobId:", jobId);
-    await waitForScrapingCompletionV2(jobId, companyId, url);
+    await crawlCompany(url, companyId);
+    console.log("Scraping completed successfully!", companyId);
 
+    const { runAllPromptHelper } = require("./company_helper");
+    await runAllPromptHelper(companyId);
     console.log("GPT prompts run successfully!");
   } catch (error) {
     console.error("Error in scraping workflow:", error);
@@ -271,9 +152,9 @@ const handleScrapingWorkflow = async (url, companyId) => {
 const handleBlogScrapingWorkflow = async (url, companyId) => {
   try {
     console.log("Blog Scraping Started !!!!");
-    const blogJobId = await blogScraper(url);
-    console.log("Blog scraping job started with jobId:", blogJobId);
-    await waitForBlogScrapingCompletion(blogJobId, companyId);
+    const blogJob = await blogScraper(url);
+    console.log(`Blog crawl ${blogJob.id}: ${blogJob.status}`);
+    await waitForBlogScrapingCompletion(blogJob, companyId);
     console.log("Blog GPT prompts run successfully!");
   } catch (error) {
     console.error("Error in blog scraping workflow:", error);
@@ -417,20 +298,16 @@ const blogScraper = async (url) => {
   const urls_to_include = blogUrls.map((url) => `/${url}/*`);
   const urls_to_exclude = allUrlsToExclude.map((url) => `/${url}/*`);
 
-  const reqBody = {
-    url,
+  return firecrawl.crawl(url, {
     includePaths: urls_to_include,
     excludePaths: urls_to_exclude,
-    maxDepth: 4,
+    maxDiscoveryDepth: 4,
     limit: 15,
     scrapeOptions: {
       onlyMainContent: true,
       waitFor: 5000,
     },
-  };
-
-  const response = await axios.post(`${fireCrawlApiEndpoint}/crawl`, reqBody);
-  return response.data.id;
+  });
 };
 
 const scrapeAllCompanies = async (companyId) => {

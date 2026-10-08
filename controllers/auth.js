@@ -288,15 +288,15 @@ function sendResetEmail(email, token) {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: "faizamu19@gmail.com",
-      pass: "oxeb ikre zmpc wukj",
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
     },
   });
 
   const resetLink = `${process.env.CLIENT_URL}/resetpassword?token=${token}`;
 
   const mailOptions = {
-    from: "faizamu19@gmail.com",
+    from: process.env.GMAIL_USER,
     to: email,
     subject: "Password Reset",
     html: `
@@ -330,13 +330,13 @@ const sendOtpEmail = async (email, otp) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: "faizamu19@gmail.com",
-      pass: "oxeb ikre zmpc wukj",
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
     },
   });
 
   const mailOptions = {
-    from: "faizamu19@gmail.com",
+    from: process.env.GMAIL_USER,
     to: email,
     subject: "Your OTP Code",
     html: `

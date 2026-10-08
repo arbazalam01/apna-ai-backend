@@ -105,7 +105,7 @@ const getPostAnalysis = async (companyId, page, pageSize) => {
           },
         },
       },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     const newPostsData = analysisUpdatedData.about.dashboardResult.posts;
@@ -240,7 +240,7 @@ const getPostAnalysisV2 = async (
           },
         },
       },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     const newPostsData = analysisUpdatedData.about.dashboardResult.posts;

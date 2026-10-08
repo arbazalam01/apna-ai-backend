@@ -33,7 +33,6 @@ const {
   createThreadAndRunonKnowledgeBase,
 } = require("../utils/openai_helper");
 const { saveFileContent, fetchFileFromS3 } = require("../utils/aws_helper");
-const { json } = require("body-parser");
 const fs = require("fs");
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
@@ -684,7 +683,7 @@ const updateCalendarInput = async (req, res) => {
     const updatedCalendarInput = await Calendar.findByIdAndUpdate(
       req.params.calendarId,
       req.body,
-      { new: true }
+      { returnDocument: "after" }
     );
     res.status(200).json(updatedCalendarInput);
   } catch (error) {
@@ -882,7 +881,7 @@ const uploadCalendar = async (calendarId) => {
     console.log('CSV file written successfully.');
 
     // Read the CSV content
-    const csvContent = await fs.readFile(csvPath);
+    const csvContent = await fs.promises.readFile(csvPath);
     
     // Save the CSV content to a persistent location
     await saveFileContent(`CalendarCampaign/${calendarId}`, 'calendar.csv', csvContent);

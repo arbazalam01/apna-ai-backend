@@ -1,26 +1,19 @@
 const schedule = require("node-schedule");
 const Company = require("../models/Company");
-const AWS = require("aws-sdk");
+const { s3 } = require("./aws_helper");
 const { isAssistantExist, saveAIOutput } = require("./company_helper");
 const { getAllPrompts } = require("../lib/function_calling");
 const { runSinglePrompt } = require("./openai_helper");
-
-AWS.config.update({
-  accessKeyId: process.env.ACCESSKEY,
-  secretAccessKey: process.env.SECRETKEY,
-  region: process.env.REGION,
-});
-
-const s3 = new AWS.S3();
 
 let intervalId;
 
 async function doesPathExist(bucketName, path) {
   try {
-    const response = await s3
-      .listObjectsV2({ Bucket: bucketName, Prefix: path })
-      .promise();
-    return response.Contents.length > 0;
+    const response = await s3.listObjectsV2({
+      Bucket: bucketName,
+      Prefix: path,
+    });
+    return response.KeyCount > 0;
   } catch (error) {
     console.error("Error checking path existence:", error);
     throw error; // Re-throw the error to handle it outside

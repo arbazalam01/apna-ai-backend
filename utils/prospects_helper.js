@@ -4,6 +4,7 @@ const {
   fetchDataFromS3,
   saveFileContent,
   isFileExistS3,
+  s3,
 } = require("./aws_helper");
 const {
   uploadFile,
@@ -34,16 +35,6 @@ const { createObjectCsvWriter } = require("csv-writer");
 const { csvToJson } = require("./csv_parser");
 const FormData = require("form-data");
 const nodemailer = require("nodemailer");
-const AWS = require("aws-sdk");
-
-// Configure AWS SDK with your credentials and region
-AWS.config.update({
-  accessKeyId: process.env.ACCESSKEY,
-  secretAccessKey: process.env.SECRETKEY,
-  region: process.env.REGION,
-});
-
-const s3 = new AWS.S3();
 
 const saveProspects = async (prospects, campaigninfo) => {
   let prsopectList = [];
@@ -292,7 +283,7 @@ const generateEmail = async (userId, companyData, campaignGuidlines) => {
       Bucket: process.env.BUCKETNAME,
       Key: `Users/${userId}/persona.md`,
     };
-    const data = await s3.getObject(getObjectParams).promise();
+    const data = await s3.getObject(getObjectParams);
 
     if (!data) {
       console.log("Persona file not found");
@@ -301,7 +292,11 @@ const generateEmail = async (userId, companyData, campaignGuidlines) => {
 
     const formData = new FormData();
     const uniqueId = `${userId}_${companyData._id}`;
-    formData.append("file", data.Body, `Users/${userId}/persona.md`); // Use Buffer and filename
+    formData.append(
+      "file",
+      Buffer.from(await data.Body.transformToByteArray()),
+      `Users/${userId}/persona.md`
+    ); // Use Buffer and filename
     formData.append("company_id", uniqueId.toString());
 
     // Upload to the external API
@@ -375,13 +370,13 @@ function sendCustomEmails(email, csvContent) {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: "faizamu19@gmail.com",
-      pass: "oxeb ikre zmpc wukj",
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
     },
   });
 
   const mailOptions = {
-    from: "faizamu19@gmail.com",
+    from: process.env.GMAIL_USER,
     to: email,
     subject: "Download Email Campaigns",
     text: `Please download the csv to get list of email campaigns`,

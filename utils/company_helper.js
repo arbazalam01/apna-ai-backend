@@ -6,6 +6,7 @@ const {
   fetchFileFromS3,
   fetchCompanyReport,
   ensureDirectoryExists,
+  s3,
 } = require("./aws_helper");
 const {
   uploadFile,
@@ -17,14 +18,12 @@ const {
 } = require("./openai_helper");
 const Function_Info = require("./functions_info");
 const { default: axios } = require("axios");
-const AWS = require("aws-sdk");
 const fs = require("fs");
+const { Upload } = require("@aws-sdk/lib-storage");
 const openaiapi = process.env.OPEN_API_KEY;
 const GPT_MODEL = process.env.GPT_MODEL;
 const KNOWLEDGE_BASE_API = process.env.KNOWLEDGE_BASE_API;
 const { Blogs } = require("../lib/function_calling");
-
-const s3 = new AWS.S3();
 
 const addCompany = async (data) => {
   const newCompany = new Company(data);
@@ -48,7 +47,7 @@ const updateCompanyData = async (companyId, updateFields) => {
     const updateDocument = await Company.findByIdAndUpdate(
       companyId,
       updateFields,
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!updateDocument) {
@@ -362,19 +361,19 @@ const downloadCompanyLogo = async (companyId, profile_pic_url, type) => {
           ContentType: "image/jpeg",
         };
 
-        s3.upload(params, (err, data) => {
-          if (err) {
-            console.error(err);
-            reject(err);
-          }
+        try {
+          const { Location } = await new Upload({ client: s3, params }).done();
 
           // Delete the temporarily saved file
           fs.unlinkSync(localFilePath);
 
           // Send the S3 URL as the response
-          console.log("File uploaded successfully.", data.Location);
-          resolve(data.Location);
-        });
+          console.log("File uploaded successfully.", Location);
+          resolve(Location);
+        } catch (err) {
+          console.error(err);
+          reject(err);
+        }
       });
 
       writer.on("error", (err) => {
@@ -461,7 +460,7 @@ const removeDuplicateProductsAndServices = async (companyId) => {
         products: uniqueProducts,
       },
     },
-    { new: true }
+    { returnDocument: "after" }
   );
 };
 

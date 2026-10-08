@@ -1,10 +1,16 @@
-const AWS = require("aws-sdk");
+const { S3 } = require("@aws-sdk/client-s3");
 const Company = require("../models/Company");
 const fs = require("fs");
 const path = require("path");
 const { promisify } = require("util");
 
-const s3 = new AWS.S3();
+const s3 = new S3({
+  region: process.env.REGION,
+  credentials: {
+    accessKeyId: process.env.ACCESSKEY,
+    secretAccessKey: process.env.SECRETKEY,
+  },
+});
 const defaultBucket = process.env.BUCKETNAME;
 
 let directoryLock = false;
@@ -46,7 +52,7 @@ const fetchMultipleFileFromS3 = async (key, bucketName = defaultBucket) => {
       Bucket: bucketName,
       Key: `${key}/CONSOLIDATED_WEBSITE.md`,
     };
-    const downloadStream = s3.getObject(getObjectParams).createReadStream();
+    const { Body: downloadStream } = await s3.getObject(getObjectParams);
 
     const chunks = [];
     let totalLength = 0;
@@ -118,18 +124,19 @@ const fetchFileFromS3 = async (key, localDir, bucketName = defaultBucket) => {
 
     let data;
     try {
-      data = await s3.getObject(getObjectParams).promise();
+      const { Body } = await s3.getObject(getObjectParams);
+      data = Buffer.from(await Body.transformToByteArray());
     } catch (s3Error) {
       console.log("Error fetching file from S3:", s3Error);
       return null;
     }
 
-    if (!data.Body || data.Body.length === 0) {
+    if (data.length === 0) {
       console.log("File is empty");
       return null;
     }
 
-    await writeFile(localPath, data.Body);
+    await writeFile(localPath, data);
     console.log("File downloaded successfully.");
     return localPath;
   } catch (error) {
@@ -149,7 +156,7 @@ const fetchDataFromS3 = async (folder, file) => {
       Bucket: bucketName,
       Key: key,
     };
-    const data = await s3.getObject(getObjectParams).promise();
+    const data = await s3.getObject(getObjectParams);
     return data;
   } catch (error) {
     console.error("Error fetching data from S3 in fetchDataFromS3:", error);
@@ -204,13 +211,11 @@ const saveFileContent = async (folderName, fileName, content) => {
     const utf8EncodedContent = Buffer.from(content, "utf-8");
 
     // Save the content to the file in S3
-    await s3
-      .putObject({
-        Body: utf8EncodedContent,
-        Bucket: defaultBucket,
-        Key: filePath,
-      })
-      .promise();
+    await s3.putObject({
+      Body: utf8EncodedContent,
+      Bucket: defaultBucket,
+      Key: filePath,
+    });
 
     console.log("Content saved successfully to", filePath);
     return `Content saved successfully to ${fileName}!`;
@@ -226,7 +231,7 @@ const isFileExistS3 = async (key, bucketName = defaultBucket) => {
       Bucket: bucketName,
       Key: key,
     };
-    const { Metadata } = await s3.headObject(headObjectParams).promise();
+    const { Metadata } = await s3.headObject(headObjectParams);
     console.log("Metadata:", Metadata);
     return Metadata;
   } catch (error) {
@@ -258,11 +263,11 @@ const uploadFileToS3 = async (bucketName, filePath, content) => {
     ContentType: "text/markdown",
   };
 
-  s3.upload(params, function (err, data) {
+  s3.putObject(params, function (err) {
     if (err) {
       console.log("Error uploading data: ", err);
     } else {
-      console.log("Successfully uploaded data to " + data.Location);
+      console.log(`Successfully uploaded data to ${bucketName}/${filePath}`);
     }
   });
 };
@@ -397,34 +402,8 @@ const fetchCompanyReport = async (companyId) => {
   }
 };
 
-const isScrapingCompleted = async (companyId) => {
-  try {
-    const s3FilePath = `${companyId}/combined.md`;
-
-    const isScrapedFileExist = await isFileExistS3(s3FilePath);
-
-    if (!isScrapedFileExist) {
-      return false;
-    }
-
-    const headObjectParams = {
-      Bucket: defaultBucket,
-      Key: s3FilePath,
-    };
-    const { ContentLength } = await s3.headObject(headObjectParams).promise();
-
-    // check if the content length is greater than 12KB
-    if (ContentLength > 12 * 1024) {
-      return true;
-    }
-    return false;
-  } catch (error) {
-    console.error("Error checking if scraping is completed:", error);
-    return false;
-  }
-};
-
 module.exports = {
+  s3,
   fetchFileFromS3,
   fetchDataFromS3,
   fetchMultipleFileFromS3,
@@ -435,5 +414,4 @@ module.exports = {
   createCompanyReport,
   fetchCompanyReport,
   ensureDirectoryExists,
-  isScrapingCompleted,
 };

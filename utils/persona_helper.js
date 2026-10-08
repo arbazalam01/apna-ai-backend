@@ -277,7 +277,7 @@ const addPersonaData = async (companyId, updateFields,updateid) => {
         updateid,
         updateFields,
         {
-          new: true,
+          returnDocument: "after",
         }
       );
       if (!newPersona) {

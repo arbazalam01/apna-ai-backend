@@ -1,5 +1,4 @@
 const express = require("express");
-const AWS = require("aws-sdk");
 const {
   addCustomer,
   addAssets,
@@ -34,18 +33,11 @@ const {
 } = require("../controllers/customers");
 const multer = require("multer");
 const multerS3 = require('multer-s3')
+const { s3 } = require("../utils/aws_helper");
 const router = express.Router();
 // Multer configuration for handling file uploads
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
-// Configure AWS SDK with your credentials and region
-AWS.config.update({
-  accessKeyId: process.env.ACCESSKEY,
-  secretAccessKey: process.env.SECRETKEY,
-  region: process.env.REGION,
-});
-
-const s3 = new AWS.S3();
 const uploads = multer({
   storage: multerS3({
     s3: s3,

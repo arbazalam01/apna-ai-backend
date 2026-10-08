@@ -4,7 +4,6 @@ const { deleteFile } = require("./aws_helper");
 const { jsonrepair } = require("jsonrepair");
 const { backOff } = require("exponential-backoff");
 const axios = require("axios");
-const { query } = require("express");
 
 const openai = new OpenAI({
   apiKey: process.env.OPEN_API_KEY,
@@ -47,7 +46,7 @@ const uploadMultipleFile = async (filePaths) => {
 };
 
 const createVectorStore = async (name, fileId) => {
-  const vectorStore = await openai.beta.vectorStores.create({
+  const vectorStore = await openai.vectorStores.create({
     name,
     file_ids: fileId,
   });
@@ -129,7 +128,7 @@ const createEmptyThread = async () => {
   return emptyThread.id;
 };
 const deleteAThread = async (threadId) => {
-  await openai.beta.threads.del(threadId);
+  await openai.beta.threads.delete(threadId);
 };
 const createMessage = async (threadId, message, fileId = null) => {
   let threadMessage;
@@ -156,12 +155,16 @@ const createRun = async (assistantId, threadId, instruction) => {
 };
 
 const getRunStatus = async (threadId, runId) => {
-  const status = await openai.beta.threads.runs.retrieve(threadId, runId);
+  const status = await openai.beta.threads.runs.retrieve(runId, {
+    thread_id: threadId,
+  });
   return status;
 };
 
 const cancelRun = async (threadId, runId) => {
-  const status = await openai.beta.threads.runs.cancel(threadId, runId);
+  const status = await openai.beta.threads.runs.cancel(runId, {
+    thread_id: threadId,
+  });
   return status;
 };
 
@@ -171,30 +174,28 @@ const getMessage = async (threadId) => {
 };
 
 const retrieveMessage = async (threadId, messageId) => {
-  const message = await openai.beta.threads.messages.retrieve(
-    threadId,
-    messageId
-  );
+  const message = await openai.beta.threads.messages.retrieve(messageId, {
+    thread_id: threadId,
+  });
   return message.content[0].text.value;
 };
 
 const toolOutputsToRun = async (threadId, runId, toolId) => {
-  const run = await openai.beta.threads.runs.submitToolOutputs(
-    threadId,
-    runId,
-    {
-      tool_outputs: [
-        {
-          tool_call_id: toolId,
-          output: "Success",
-        },
-      ],
-    }
-  );
+  const run = await openai.beta.threads.runs.submitToolOutputs(runId, {
+    thread_id: threadId,
+    tool_outputs: [
+      {
+        tool_call_id: toolId,
+        output: "Success",
+      },
+    ],
+  });
 };
 
 const modifyRun = async (threadId, runId) => {
-  const run = await openai.beta.threads.runs.update(threadId, runId);
+  const run = await openai.beta.threads.runs.update(runId, {
+    thread_id: threadId,
+  });
   return run;
 };
 

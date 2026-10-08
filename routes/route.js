@@ -1,23 +1,11 @@
-require("dotenv").config();
 const express = require("express");
-const AWS = require("aws-sdk");
 const router = express.Router();
 const axios = require("axios");
-const readline = require("readline");
-const OpenAI = require("openai");
-const rp = require("request-promise");
+const { OpenAI } = require("openai");
 const cheerio = require("cheerio");
+const { s3 } = require("../utils/aws_helper");
 
 const openaiapi = process.env.OPEN_API_KEY;
-
-// Configure AWS SDK with your credentials and region
-AWS.config.update({
-  accessKeyId: process.env.ACCESSKEY,
-  secretAccessKey: process.env.SECRETKEY,
-  region: process.env.REGION,
-});
-
-const s3 = new AWS.S3();
 
 router.get("/", (req, res) => {
   res.send("<h1>Working fine!!!</h1>");
@@ -73,12 +61,12 @@ router.get("/getinfo/:key", (req, res) => {
     Key: s3FolderKey,
   };
 
-  s3.getObject(s3Params, (err, data) => {
+  s3.getObject(s3Params, async (err, data) => {
     if (err) {
       console.error("Error getting data from S3:", err);
       res.status(500).json({ error: "Failed to retrieve data from S3" });
     } else {
-      const jsonData = JSON.parse(data.Body.toString());
+      const jsonData = JSON.parse(await data.Body.transformToString());
       res.json(jsonData);
     }
   });
@@ -114,18 +102,19 @@ router.get("/getcompletedata/:company_name/:type", (req, res) => {
         Bucket: process.env.BUCKETNAME,
         Key: `customers/${company}/data.json`,
       },
-      (err, data) => {
+      async (err, data) => {
         if (err) {
           console.error("Error retrieving company details from S3:", err);
           res.status(500).send("Internal Server Error");
         } else {
-          companyDetails = JSON.parse(data.Body.toString());
+          companyDetails = JSON.parse(await data.Body.transformToString());
         }
       }
     );
 
     // Loop through each object in the S3 bucket
-    data.Contents.forEach((obj) => {
+    const contents = data.Contents ?? [];
+    contents.forEach((obj) => {
       // Check if the object is a JSON file
       if (obj.Key.endsWith(".json")) {
         const getObjectParams = {
@@ -134,14 +123,14 @@ router.get("/getcompletedata/:company_name/:type", (req, res) => {
         };
 
         // Get the content of the JSON file
-        s3.getObject(getObjectParams, (err, jsonData) => {
+        s3.getObject(getObjectParams, async (err, jsonData) => {
           if (err) {
             console.error(`Error reading ${obj.Key} from S3: ${err.message}`);
             return;
           }
 
           try {
-            const parsedData = JSON.parse(jsonData.Body.toString());
+            const parsedData = JSON.parse(await jsonData.Body.transformToString());
 
             // Extract the folder names
             const folderNames = obj.Key.split("/");
@@ -489,7 +478,7 @@ router.get("/getcompletedata/:company_name/:type", (req, res) => {
           }
 
           // If this is the last obfject, send the response
-          if (count === data.Contents.length || count === data.Contents.length - 1) {
+          if (count === contents.length || count === contents.length - 1) {
             if (type == "swotanalysis") {
               res.json(swotData);
             } else if (type == "marketpositioning") {
@@ -535,8 +524,9 @@ router.post("/gptoutput", async (req, res) => {
     // );
 
     let scrapped_data = "";
-    rp(companyurl)
-      .then(async function (html) {
+    axios
+      .get(companyurl, { responseType: "text" })
+      .then(async function ({ data: html }) {
         const $ = cheerio.load(html);
         $("body")
           .find("*")
@@ -593,12 +583,12 @@ router.post("/store-customer-data", (req, res) => {
   };
 
   // Upload data to S3
-  s3.upload(params, (err, data) => {
+  s3.putObject(params, (err) => {
     if (err) {
       console.error("Error uploading data to S3:", err);
       res.status(500).send("Internal Server Error");
     } else {
-      console.log("Data uploaded successfully:", data.Location);
+      console.log("Data uploaded successfully:", params.Key);
       res.status(200).send("Data uploaded successfully");
     }
   });
@@ -613,12 +603,12 @@ router.get("/get-company-details/:companyName", (req, res) => {
     Key: `customers/${companyName}/data.json`,
   };
 
-  s3.getObject(params, (err, data) => {
+  s3.getObject(params, async (err, data) => {
     if (err) {
       console.error("Error retrieving company details from S3:", err);
       res.status(500).send("Internal Server Error");
     } else {
-      const companyDetails = JSON.parse(data.Body.toString());
+      const companyDetails = JSON.parse(await data.Body.transformToString());
       res.status(200).json(companyDetails);
     }
   });
@@ -636,7 +626,7 @@ router.get("/get-all-customers", (req, res) => {
       console.error("Error retrieving customer data from S3:", err);
       res.status(500).send("Internal Server Error");
     } else {
-      const customerData = data.Contents.map((item) => {
+      const customerData = (data.Contents ?? []).map((item) => {
         // Extract company name from the S3 key
         const companyName = item.Key.replace("customers/", "").replace(
           "/data.json",
